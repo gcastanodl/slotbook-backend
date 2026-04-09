@@ -289,15 +289,5 @@ async function start() {
     process.exit(1);
   }
 }
-app.get('/setup', async (req, res) => {
-  try {
-    const hash = bcrypt.hashSync('1234', 10);
-    await query('DELETE FROM usuarios WHERE email = $1', ['admin@negocio.com']);
-    await query('INSERT INTO usuarios (negocio_id,nombre,email,password,role,sucursal_id,activo) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-      [13, 'Admin Principal', 'admin@negocio.com', hash, 'admin', 'Centro', 1]);
-    res.json({ ok: true, mensaje: 'Usuario creado con contraseña 1234' });
-  } catch(e) {
-    res.status(500).json({ error: e.message });
-  }
-});
+
 start();
