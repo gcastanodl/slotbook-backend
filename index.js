@@ -289,5 +289,14 @@ async function start() {
     process.exit(1);
   }
 }
-
+app.patch('/negocios/:id/estado', authMiddleware, soloSuperAdmin, async (req, res) => {
+  try {
+    const { estado } = req.body;
+    if (!['activo','inactivo'].includes(estado)) return res.status(400).json({ error: 'Estado inválido' });
+    await query('UPDATE negocios SET estado = $1 WHERE id = $2', [estado, req.params.id]);
+    res.json({ ok: true, estado });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 start();
