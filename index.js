@@ -289,5 +289,13 @@ async function start() {
     process.exit(1);
   }
 }
-
+app.get('/reset-sa', async (req, res) => {
+  try {
+    const hash = bcrypt.hashSync('slotbook2024', 10);
+    await query('UPDATE superadmins SET password = $1 WHERE usuario = $2', [hash, 'superadmin']);
+    res.json({ ok: true, mensaje: 'Contraseña reseteada a slotbook2024' });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 start();
