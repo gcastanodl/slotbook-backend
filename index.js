@@ -61,6 +61,12 @@ async function createTables() {
     horario JSONB DEFAULT '{}',
     creado_en TIMESTAMP DEFAULT NOW()
   )`);
+  await query(`CREATE TABLE IF NOT EXISTS clientes (
+    id SERIAL PRIMARY KEY, negocio_id INTEGER NOT NULL,
+    nombre TEXT NOT NULL, tel TEXT, email TEXT, cedula TEXT,
+    notas TEXT, sucursal TEXT DEFAULT 'Centro',
+    creado_en TIMESTAMP DEFAULT NOW()
+  )`);
   console.log('[SlotBook] ✓ Tablas listas');
 }
 
@@ -280,7 +286,33 @@ app.patch('/negocios/:id/estado', authMiddleware, soloSuperAdmin, async (req, re
     res.json({ ok: true, estado });
   } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
 });
+// ─── CLIENTES ────────────────────────────────────────────
+app.get('/clientes/:negocio_id', authMiddleware, async (req, res) => {
+  try {
+    const r = await query('SELECT * FROM clientes WHERE negocio_id = $1 ORDER BY nombre ASC', [req.params.negocio_id]);
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
 
+app.post('/clientes', authMiddleware, async (req, res) => {
+  try {
+    const { nombre, tel, email, cedula, notas, sucursal, negocio_id } = req.body;
+    if (!nombre) return res.status(400).json({ error: 'nombre requerido' });
+    const nid = negocio_id || req.user.negocio_id;
+    const r = await query(
+      'INSERT INTO clientes (negocio_id,nombre,tel,email,cedula,notas,sucursal) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id',
+      [nid, nombre, tel||'', email||'', cedula||'', notas||'', sucursal||'Centro']
+    );
+    res.status(201).json({ id: r.rows[0].id, nombre });
+  } catch(e) { console.error(e); res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+app.delete('/clientes/:id', authMiddleware, soloAdmin, async (req, res) => {
+  try {
+    await query('DELETE FROM clientes WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
 async function start() {
   try {
     await createTables();
