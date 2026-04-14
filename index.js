@@ -67,6 +67,13 @@ async function createTables() {
     notas TEXT, sucursal TEXT DEFAULT 'Centro',
     creado_en TIMESTAMP DEFAULT NOW()
   )`);
+  await query(`CREATE TABLE IF NOT EXISTS servicios (
+    id SERIAL PRIMARY KEY, negocio_id INTEGER NOT NULL,
+    nombre TEXT NOT NULL, duracion TEXT DEFAULT '30',
+    precio TEXT DEFAULT '0', desc TEXT,
+    activo INTEGER DEFAULT 1,
+    creado_en TIMESTAMP DEFAULT NOW()
+  )`);
   console.log('[SlotBook] ✓ Tablas listas');
 }
 
@@ -312,6 +319,26 @@ app.delete('/clientes/:id', authMiddleware, soloAdmin, async (req, res) => {
     await query('DELETE FROM clientes WHERE id = $1', [req.params.id]);
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
+// ─── SERVICIOS ────────────────────────────────────────────
+app.get('/servicios/:negocio_id', authMiddleware, async (req, res) => {
+  try {
+    const r = await query('SELECT * FROM servicios WHERE negocio_id = $1 AND activo = 1 ORDER BY nombre ASC', [req.params.negocio_id]);
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+app.post('/servicios', authMiddleware, soloAdmin, async (req, res) => {
+  try {
+    const { nombre, duracion, precio, desc, negocio_id } = req.body;
+    if (!nombre) return res.status(400).json({ error: 'nombre requerido' });
+    const nid = negocio_id || req.user.negocio_id;
+    const r = await query(
+      'INSERT INTO servicios (negocio_id,nombre,duracion,precio,desc) VALUES ($1,$2,$3,$4,$5) RETURNING id',
+      [nid, nombre, duracion||'30', precio||'0', desc||'']
+    );
+    res.status(201).json({ id: r.rows[0].id, nombre });
+  } catch(e) { console.error(e); res.status(500).json({ error: 'Error del servidor' }); }
 });
 async function start() {
   try {
