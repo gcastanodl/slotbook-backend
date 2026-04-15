@@ -70,7 +70,7 @@ async function createTables() {
   await query(`CREATE TABLE IF NOT EXISTS servicios (
     id SERIAL PRIMARY KEY, negocio_id INTEGER NOT NULL,
     nombre TEXT NOT NULL, duracion TEXT DEFAULT '30',
-    precio TEXT DEFAULT '0', desc TEXT,
+    precio TEXT DEFAULT '0', descripcion TEXT,
     activo INTEGER DEFAULT 1,
     creado_en TIMESTAMP DEFAULT NOW()
   )`);
@@ -334,7 +334,7 @@ app.post('/servicios', authMiddleware, soloAdmin, async (req, res) => {
     if (!nombre) return res.status(400).json({ error: 'nombre requerido' });
     const nid = negocio_id || req.user.negocio_id;
     const r = await query(
-      'INSERT INTO servicios (negocio_id,nombre,duracion,precio,desc) VALUES ($1,$2,$3,$4,$5) RETURNING id',
+      'INSERT INTO servicios (negocio_id,nombre,duracion,precio,descripcion) VALUES ($1,$2,$3,$4,$5) RETURNING id',
       [nid, nombre, duracion||'30', precio||'0', desc||'']
     );
     res.status(201).json({ id: r.rows[0].id, nombre });
