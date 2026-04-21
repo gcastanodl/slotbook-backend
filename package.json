@@ -1,22 +1,7 @@
 {
   "name": "slotbook-backend",
   "version": "1.0.0",
-  "description": "Backend API para SlotBook",
-  "main": "index.js",
-  "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  },
-<<<<<<< HEAD
-  "scripts": { "start": "node index.js" },`n  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-=======
->>>>>>> f3d0947231ad92d03108226b021f28554617f436
+  "scripts": { "start": "node index.js" },
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
