@@ -82,6 +82,9 @@ async function createTables() {
     activo INTEGER DEFAULT 1,
     creado_en TIMESTAMP DEFAULT NOW()
   )`);
+  await query(`ALTER TABLE sucursales ADD COLUMN IF NOT EXISTS key TEXT`);
+  await query(`ALTER TABLE sucursales ADD COLUMN IF NOT EXISTS direccion TEXT DEFAULT ''`);
+  await query(`ALTER TABLE sucursales ADD COLUMN IF NOT EXISTS tel TEXT DEFAULT ''`);
   console.log('[SlotBook] ✓ Tablas listas');
 }
 
