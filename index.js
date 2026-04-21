@@ -375,7 +375,7 @@ app.post('/sucursales', authMiddleware, soloAdmin, async (req, res) => {
 async function start() {
   try {
     await createTables();
-    await seedData();
+  
     app.listen(PORT, () => {
       console.log(`[SlotBook] ✓ Servidor en puerto ${PORT}`);
       console.log(`[SlotBook] Health: http://localhost:${PORT}/health`);
