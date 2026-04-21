@@ -145,9 +145,11 @@ app.post('/auth/login', async (req, res) => {
       return res.json({ token, user: { id: sa.rows[0].id, nombre: 'SuperAdmin', email: 'superadmin', role: 'superadmin' } });
     }
     if (!email || !password) return res.status(400).json({ error: 'Email y contraseña requeridos' });
-    const u = await query('SELECT * FROM usuarios WHERE email = $1 AND activo = 1', [email.toLowerCase().trim()]);
+    const u = await query('SELECT u.*, n.estado as negocio_estado FROM usuarios u JOIN negocios n ON u.negocio_id = n.id WHERE u.email = $1 AND u.activo = 1', [email.toLowerCase().trim()]);
     if (u.rows.length === 0 || !bcrypt.compareSync(password, u.rows[0].password))
       return res.status(401).json({ error: 'Credenciales incorrectas' });
+    if (u.rows[0].negocio_estado === 'inactivo')
+      return res.status(403).json({ error: 'Tu cuenta está suspendida. Contacta al administrador.' });
     const user = u.rows[0];
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role, negocio_id: user.negocio_id }, JWT_SECRET, { expiresIn: '8h' });
     res.json({ token, user: { id: user.id, nombre: user.nombre, email: user.email, role: user.role, sucursalId: user.sucursal_id, negocio_id: user.negocio_id } });
