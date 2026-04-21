@@ -1,4 +1,5 @@
 // ═══════════════════════════════════════════════════════════
+console.log('[DEBUG] index.js version con sucursales:', new Date().toISOString());
 //  SLOTBOOK BACKEND — Express + PostgreSQL
 //  Desplegado en Railway
 // ═══════════════════════════════════════════════════════════
@@ -71,6 +72,13 @@ async function createTables() {
     id SERIAL PRIMARY KEY, negocio_id INTEGER NOT NULL,
     nombre TEXT NOT NULL, duracion TEXT DEFAULT '30',
     precio TEXT DEFAULT '0', descripcion TEXT,
+    activo INTEGER DEFAULT 1,
+    creado_en TIMESTAMP DEFAULT NOW()
+  )`);
+  await query(`CREATE TABLE IF NOT EXISTS sucursales (
+    id SERIAL PRIMARY KEY, negocio_id INTEGER NOT NULL,
+    nombre TEXT NOT NULL, key TEXT,
+    direccion TEXT, tel TEXT,
     activo INTEGER DEFAULT 1,
     creado_en TIMESTAMP DEFAULT NOW()
   )`);
@@ -339,6 +347,26 @@ app.post('/servicios', authMiddleware, soloAdmin, async (req, res) => {
     );
     res.status(201).json({ id: r.rows[0].id, nombre });
   } catch(e) { console.error(e); res.status(500).json({ error: 'Error del servidor' }); }
+});
+// ─── SUCURSALES ───────────────────────────────────────────
+app.get('/sucursales/:negocio_id', authMiddleware, async (req, res) => {
+  try {
+    const r = await query('SELECT * FROM sucursales WHERE negocio_id = $1 ORDER BY creado_en ASC', [req.params.negocio_id]);
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+app.post('/sucursales', authMiddleware, soloAdmin, async (req, res) => {
+  try {
+    const { nombre, key, direccion, tel, negocio_id } = req.body;
+    if (!nombre) return res.status(400).json({ error: 'nombre requerido' });
+    const nid = negocio_id || req.user.negocio_id;
+    const r = await query(
+      'INSERT INTO sucursales (negocio_id,nombre,key,direccion,tel) VALUES ($1,$2,$3,$4,$5) RETURNING id',
+      [nid, nombre, key||nombre, direccion||'', tel||'']
+    );
+    res.status(201).json({ id: r.rows[0].id, nombre, key: key||nombre });
+  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
 });
 async function start() {
   try {
