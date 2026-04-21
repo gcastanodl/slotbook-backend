@@ -87,9 +87,7 @@ async function createTables() {
   await query(`ALTER TABLE sucursales ADD COLUMN IF NOT EXISTS tel TEXT DEFAULT ''`);
   await query(`ALTER TABLE sucursales ALTER COLUMN slug DROP NOT NULL`);
   console.log('[SlotBook] ✓ Tablas listas');
-}
 
-async function seedData() {
   const sa = await query('SELECT id FROM superadmins WHERE usuario = $1', ['superadmin']);
   if (sa.rows.length === 0) {
     const hash = bcrypt.hashSync('slotbook2024', 10);
