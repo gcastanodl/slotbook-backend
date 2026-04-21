@@ -96,11 +96,11 @@ async function seedData() {
     await query('INSERT INTO superadmins (usuario, password) VALUES ($1, $2)', ['superadmin', hash]);
     console.log('[SlotBook] ✓ Superadmin creado');
   }
-  const demo = await query("SELECT id FROM negocios WHERE nombre = $1", ['Barbería Elite Santiago']);
+ const demo = await query("SELECT id FROM negocios WHERE nombre = $1", ['BarberÃa Elite Santiago']);
   if (demo.rows.length === 0) {
     const neg = await query(
       'INSERT INTO negocios (nombre,tipo,color,ini,tel,ciudad,plan,estado) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id',
-      ['Barbería Elite Santiago','barberia','#6366F1','BE','+1 829 555 1000','Santiago','pro','activo']
+      ['BarberÃa Elite Santiago','barberia','#6366F1','BE','+1 829 555 1000','Santiago','pro','activo']
     );
     const negId = neg.rows[0].id;
     const adminHash = bcrypt.hashSync('1234', 10);
