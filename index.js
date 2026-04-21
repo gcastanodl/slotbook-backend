@@ -147,7 +147,7 @@ app.post('/auth/login', async (req, res) => {
     const user = u.rows[0];
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role, negocio_id: user.negocio_id }, JWT_SECRET, { expiresIn: '8h' });
     res.json({ token, user: { id: user.id, nombre: user.nombre, email: user.email, role: user.role, sucursalId: user.sucursal_id, negocio_id: user.negocio_id } });
-  } catch(e) { console.error(e); res.status(500).json({ error: 'Error del servidor' }); }
+  } catch(e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
 app.get('/users', authMiddleware, soloAdmin, async (req, res) => {
@@ -155,7 +155,7 @@ app.get('/users', authMiddleware, soloAdmin, async (req, res) => {
     const nid = req.query.negocio_id || req.user.negocio_id;
     const r = await query('SELECT id,nombre,email,role,sucursal_id,activo,creado_en FROM usuarios WHERE negocio_id = $1', [nid]);
     res.json(r.rows);
-  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/users', authMiddleware, soloAdmin, async (req, res) => {
@@ -169,7 +169,7 @@ app.post('/users', authMiddleware, soloAdmin, async (req, res) => {
     const r = await query('INSERT INTO usuarios (negocio_id,nombre,email,password,role,sucursal_id) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
       [nid, nombre, email.toLowerCase(), hash, role||'staff', sucursalId||'Centro']);
     res.status(201).json({ id: r.rows[0].id, nombre, email, role: role||'staff' });
-  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.delete('/users/:id', authMiddleware, soloAdmin, async (req, res) => {
@@ -179,14 +179,14 @@ app.delete('/users/:id', authMiddleware, soloAdmin, async (req, res) => {
     if (req.user.role !== 'superadmin' && u.rows[0].negocio_id !== req.user.negocio_id) return res.status(403).json({ error: 'Sin permiso' });
     await query('DELETE FROM usuarios WHERE id = $1', [req.params.id]);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/empleados/:negocio_id', authMiddleware, async (req, res) => {
   try {
     const r = await query('SELECT * FROM empleados WHERE negocio_id = $1 AND activo = 1 ORDER BY nombre ASC', [req.params.negocio_id]);
     res.json(r.rows);
-  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/empleados', authMiddleware, soloAdmin, async (req, res) => {
@@ -201,7 +201,7 @@ app.post('/empleados', authMiddleware, soloAdmin, async (req, res) => {
       [nid, key, nombre, ini, rol||'Barbero', sucursal||'Centro', color||'#6366F1', tel||'', email||'', JSON.stringify(horario||{})]
     );
     res.status(201).json({ id: r.rows[0].id, key, nombre, iniciales: ini, rol: rol||'Barbero', sucursal: sucursal||'Centro', color: color||'#6366F1' });
-  } catch(e) { console.error(e); res.status(500).json({ error: 'Error del servidor' }); }
+  } catch(e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
 app.patch('/empleados/:id', authMiddleware, soloAdmin, async (req, res) => {
@@ -214,21 +214,21 @@ app.patch('/empleados/:id', authMiddleware, soloAdmin, async (req, res) => {
       WHERE id=$9`,
       [nombre, rol, sucursal, color, tel, email, horario ? JSON.stringify(horario) : null, activo, req.params.id]);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.delete('/empleados/:id', authMiddleware, soloAdmin, async (req, res) => {
   try {
     await query('UPDATE empleados SET activo = 0 WHERE id = $1', [req.params.id]);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/citas/:negocio_id', async (req, res) => {
   try {
     const r = await query('SELECT * FROM citas WHERE negocio_id = $1 ORDER BY fecha DESC, hora ASC', [req.params.negocio_id]);
     res.json(r.rows);
-  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/citas', async (req, res) => {
@@ -239,7 +239,7 @@ app.post('/citas', async (req, res) => {
       [c.negocio_id||1, c.cliente||'', c.cliente_tel||c.clienteTel||'', c.servicio||'', c.barbero||'', c.barbero_key||c.barberoKey||'',
        c.fecha, c.hora, c.sucursal||'Centro', c.estado||'pendiente', c.precio||'0', c.duracion||'30 min', c.notas||'']);
     res.status(201).json({ id: r.rows[0].id, ...c });
-  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.patch('/citas/:id', authMiddleware, async (req, res) => {
@@ -247,7 +247,7 @@ app.patch('/citas/:id', authMiddleware, async (req, res) => {
     const { estado, notas } = req.body;
     await query('UPDATE citas SET estado = $1, notas = COALESCE($2, notas) WHERE id = $3', [estado, notas, req.params.id]);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/negocios', authMiddleware, soloSuperAdmin, async (req, res) => {
@@ -258,7 +258,7 @@ app.get('/negocios', authMiddleware, soloSuperAdmin, async (req, res) => {
       return { ...n, citas_total: parseInt(c.rows[0].t) || 0 };
     }));
     res.json(negocios);
-  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/negocios', authMiddleware, soloSuperAdmin, async (req, res) => {
@@ -273,7 +273,7 @@ app.post('/negocios', authMiddleware, soloSuperAdmin, async (req, res) => {
     await query('INSERT INTO usuarios (negocio_id,nombre,email,password,role,sucursal_id) VALUES ($1,$2,$3,$4,$5,$6)',
       [neg.rows[0].id, adminNombre||nombre, adminEmail.toLowerCase(), hash, 'admin', 'Centro']);
     res.status(201).json({ id: neg.rows[0].id, nombre, plan });
-  } catch(e) { console.error(e); res.status(500).json({ error: 'Error del servidor' }); }
+  } catch(e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
 app.patch('/negocios/:id', authMiddleware, soloSuperAdmin, async (req, res) => {
@@ -290,7 +290,7 @@ app.patch('/negocios/:id', authMiddleware, soloSuperAdmin, async (req, res) => {
       [f.nombre,f.tipo,f.color,f.ini,f.tel,f.whatsapp,f.ciudad,f.direccion,
        f.descripcion,f.plan,f.sucursales,f.empleados,f.rnc,f.estado,req.params.id]);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.patch('/negocios/:id/estado', authMiddleware, soloSuperAdmin, async (req, res) => {
@@ -299,14 +299,14 @@ app.patch('/negocios/:id/estado', authMiddleware, soloSuperAdmin, async (req, re
     if (!['activo','inactivo'].includes(estado)) return res.status(400).json({ error: 'Estado inválido' });
     await query('UPDATE negocios SET estado = $1 WHERE id = $2', [estado, req.params.id]);
     res.json({ ok: true, estado });
-  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 // ─── CLIENTES ────────────────────────────────────────────
 app.get('/clientes/:negocio_id', authMiddleware, async (req, res) => {
   try {
     const r = await query('SELECT * FROM clientes WHERE negocio_id = $1 ORDER BY nombre ASC', [req.params.negocio_id]);
     res.json(r.rows);
-  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/clientes', authMiddleware, async (req, res) => {
@@ -319,21 +319,21 @@ app.post('/clientes', authMiddleware, async (req, res) => {
       [nid, nombre, tel||'', email||'', cedula||'', notas||'', sucursal||'Centro']
     );
     res.status(201).json({ id: r.rows[0].id, nombre });
-  } catch(e) { console.error(e); res.status(500).json({ error: 'Error del servidor' }); }
+  } catch(e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
 app.delete('/clientes/:id', authMiddleware, soloAdmin, async (req, res) => {
   try {
     await query('DELETE FROM clientes WHERE id = $1', [req.params.id]);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 // ─── SERVICIOS ────────────────────────────────────────────
 app.get('/servicios/:negocio_id', authMiddleware, async (req, res) => {
   try {
     const r = await query('SELECT * FROM servicios WHERE negocio_id = $1 AND activo = 1 ORDER BY nombre ASC', [req.params.negocio_id]);
     res.json(r.rows);
-  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/servicios', authMiddleware, soloAdmin, async (req, res) => {
@@ -346,14 +346,14 @@ app.post('/servicios', authMiddleware, soloAdmin, async (req, res) => {
       [nid, nombre, duracion||'30', precio||'0', desc||'']
     );
     res.status(201).json({ id: r.rows[0].id, nombre });
-  } catch(e) { console.error(e); res.status(500).json({ error: 'Error del servidor' }); }
+  } catch(e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 // ─── SUCURSALES ───────────────────────────────────────────
 app.get('/sucursales/:negocio_id', authMiddleware, async (req, res) => {
   try {
     const r = await query('SELECT * FROM sucursales WHERE negocio_id = $1 ORDER BY creado_en ASC', [req.params.negocio_id]);
     res.json(r.rows);
-  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/sucursales', authMiddleware, soloAdmin, async (req, res) => {
@@ -366,7 +366,7 @@ app.post('/sucursales', authMiddleware, soloAdmin, async (req, res) => {
       [nid, nombre, key||nombre, direccion||'', tel||'']
     );
     res.status(201).json({ id: r.rows[0].id, nombre, key: key||nombre });
-  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 async function start() {
   try {
