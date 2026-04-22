@@ -87,6 +87,14 @@ async function createTables() {
   await query(`ALTER TABLE sucursales ADD COLUMN IF NOT EXISTS tel TEXT DEFAULT ''`);
   await query(`ALTER TABLE sucursales ALTER COLUMN slug DROP NOT NULL`);
   console.log('[SlotBook] ✓ Tablas listas');
+  await query(`CREATE TABLE IF NOT EXISTS facturas (
+    id SERIAL PRIMARY KEY, negocio_id INTEGER NOT NULL,
+    numero TEXT NOT NULL, negocio TEXT, sucursal TEXT,
+    cliente TEXT, cliente_tel TEXT, servicio TEXT,
+    barbero TEXT, fecha TEXT, hora TEXT,
+    precio TEXT DEFAULT '0', emitida TEXT,
+    cita_id INTEGER, creado_en TIMESTAMP DEFAULT NOW()
+  )`);
 
   const sa = await query('SELECT id FROM superadmins WHERE usuario = $1', ['superadmin']);
   if (sa.rows.length === 0) {
