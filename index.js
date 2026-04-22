@@ -358,6 +358,24 @@ app.post('/sucursales', authMiddleware, soloAdmin, async (req, res) => {
     res.status(201).json({ id: r.rows[0].id, nombre, key: key||nombre });
   } catch(e) { console.error('[500 ERROR]', e.message); res.status(500).json({ error: e.message }); }
 });
+// ─── FACTURAS ────────────────────────────────────────────
+app.get('/facturas/:negocio_id', authMiddleware, async (req, res) => {
+  try {
+    const r = await query('SELECT * FROM facturas WHERE negocio_id = $1 ORDER BY emitida DESC', [req.params.negocio_id]);
+    res.json(r.rows);
+  } catch(e) { console.error('[500 ERROR]', e.message); res.status(500).json({ error: e.message }); }
+});
+
+app.post('/facturas', authMiddleware, async (req, res) => {
+  try {
+    const { negocio_id, numero, negocio, sucursal, cliente, cliente_tel, servicio, barbero, fecha, hora, precio, emitida, cita_id } = req.body;
+    const r = await query(
+      'INSERT INTO facturas (negocio_id,numero,negocio,sucursal,cliente,cliente_tel,servicio,barbero,fecha,hora,precio,emitida,cita_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id',
+      [negocio_id, numero, negocio, sucursal, cliente, cliente_tel||'', servicio, barbero, fecha, hora, precio, emitida, cita_id||null]
+    );
+    res.status(201).json({ id: r.rows[0].id });
+  } catch(e) { console.error('[500 ERROR]', e.message); res.status(500).json({ error: e.message }); }
+});
 async function start() {
   try {
     await createTables();
