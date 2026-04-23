@@ -402,7 +402,7 @@ app.put('/mi-negocio', authMiddleware, soloAdmin, async (req, res) => {
     const nid = req.user.negocio_id;
     const { nombre, direccion, tel, wasa } = req.body;
     if (!nombre) return res.status(400).json({ error: 'nombre requerido' });
-    await query('UPDATE negocios SET nombre=$1, direccion=$2, tel=$3, wasa=$4 WHERE id=$5',
+    await query('UPDATE negocios SET nombre=$1, direccion=$2, tel=$3, whatsapp=$4 WHERE id=$5',
       [nombre, direccion||'', tel||'', wasa||'', nid]);
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
