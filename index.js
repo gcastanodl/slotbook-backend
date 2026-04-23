@@ -508,3 +508,40 @@ app.get('/negocios/:id', authMiddleware, async (req, res) => {
     res.json(r.rows[0]);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
+
+// Rutas publicas para pagina de reservas
+app.get('/public/sucursales/:nid', async (req, res) => {
+  try {
+    const r = await query('SELECT * FROM sucursales WHERE negocio_id = $1 AND activo = 1 ORDER BY creado_en ASC', [req.params.nid]);
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/public/empleados/:nid', async (req, res) => {
+  try {
+    const r = await query('SELECT id,nombre,iniciales,rol,sucursal,color,key,horario FROM empleados WHERE negocio_id = $1 AND activo = 1 ORDER BY nombre ASC', [req.params.nid]);
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/public/servicios/:nid', async (req, res) => {
+  try {
+    const r = await query('SELECT id,nombre,duracion,precio FROM servicios WHERE negocio_id = $1 AND activo = 1 ORDER BY nombre ASC', [req.params.nid]);
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/public/citas/:nid', async (req, res) => {
+  try {
+    const r = await query('SELECT barbero,barbero_key,fecha,hora,duracion,estado FROM citas WHERE negocio_id = $1 AND estado != $2', [req.params.nid,'cancelada']);
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/public/negocio/:nid', async (req, res) => {
+  try {
+    const r = await query('SELECT nombre,ciudad,direccion,tel,horario FROM negocios WHERE id = $1', [req.params.nid]);
+    if (!r.rows.length) return res.status(404).json({ error: 'No encontrado' });
+    res.json(r.rows[0]);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
