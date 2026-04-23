@@ -487,7 +487,7 @@ app.patch('/mi-negocio', authMiddleware, soloAdmin, async (req, res) => {
 // Rutas publicas para pagina de reservas
 app.get('/public/sucursales/:nid', async (req, res) => {
   try {
-    const r = await query('SELECT * FROM sucursales WHERE negocio_id = $1 AND activo = 1 ORDER BY creado_en ASC', [req.params.nid]);
+    const r = await query('SELECT * FROM sucursales WHERE negocio_id = $1 ORDER BY creado_en ASC', [req.params.nid]);
     res.json(r.rows);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
