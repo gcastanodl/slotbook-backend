@@ -451,3 +451,12 @@ async function start() {
 }
 
 start();
+
+// GET /negocios/:id
+app.get('/negocios/:id', authMiddleware, async (req, res) => {
+  try {
+    const r = await query('SELECT * FROM negocios WHERE id = $1', [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: 'No encontrado' });
+    res.json(r.rows[0]);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
