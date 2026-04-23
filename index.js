@@ -87,6 +87,10 @@ async function createTables() {
   await query(`ALTER TABLE sucursales ADD COLUMN IF NOT EXISTS tel TEXT DEFAULT ''`);
   await query(`ALTER TABLE sucursales ALTER COLUMN slug DROP NOT NULL`);
   await query(`ALTER TABLE negocios ADD COLUMN IF NOT EXISTS horario JSONB`);
+  await query(`ALTER TABLE servicios ADD COLUMN IF NOT EXISTS sucursales TEXT DEFAULT 'todas'`);
+  await query(`ALTER TABLE servicios ADD COLUMN IF NOT EXISTS barberos TEXT DEFAULT 'todos'`);
+  await query(`ALTER TABLE servicios ADD COLUMN IF NOT EXISTS sucursales TEXT DEFAULT 'todas'`);
+  await query(`ALTER TABLE servicios ADD COLUMN IF NOT EXISTS barberos TEXT DEFAULT 'todos'`);
   await query(`ALTER TABLE negocios ADD COLUMN IF NOT EXISTS descripcion TEXT DEFAULT ''`);
   console.log('[SlotBook] ✓ Tablas listas');
   await query(`CREATE TABLE IF NOT EXISTS facturas (
@@ -347,6 +351,42 @@ app.post('/servicios', authMiddleware, soloAdmin, async (req, res) => {
     );
     res.status(201).json({ id: r.rows[0].id, nombre });
   } catch(e) { console.error(e); res.status(500).json({ error: e.message }); }
+});
+// PUT /servicios/:id — editar servicio
+app.put('/servicios/:id', authMiddleware, soloAdmin, async (req, res) => {
+  try {
+    const { nombre, duracion, precio, desc, sucursales, barberos } = req.body;
+    if (!nombre) return res.status(400).json({ error: 'nombre requerido' });
+    await query(`UPDATE servicios SET
+      nombre=$1, duracion=COALESCE($2,duracion), precio=COALESCE($3,precio),
+      descripcion=COALESCE($4,descripcion)
+      WHERE id=$5 AND negocio_id=$6`,
+      [nombre, duracion, precio, desc, req.params.id, req.user.negocio_id]);
+    res.json({ ok: true });
+  } catch(e) { console.error('[500]', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /servicios/:id — desactivar servicio
+app.delete('/servicios/:id', authMiddleware, soloAdmin, async (req, res) => {
+  try {
+    await query('UPDATE servicios SET activo=0 WHERE id=$1 AND negocio_id=$2',
+      [req.params.id, req.user.negocio_id]);
+    res.json({ ok: true });
+  } catch(e) { console.error('[500]', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// PUT /empleados/:id — editar datos del empleado
+app.put('/empleados/:id', authMiddleware, soloAdmin, async (req, res) => {
+  try {
+    const { nombre, rol, sucursal, color, tel, email, iniciales } = req.body;
+    await query(`UPDATE empleados SET
+      nombre=COALESCE($1,nombre), rol=COALESCE($2,rol), sucursal=COALESCE($3,sucursal),
+      color=COALESCE($4,color), tel=COALESCE($5,tel), email=COALESCE($6,email),
+      iniciales=COALESCE($7,iniciales)
+      WHERE id=$8 AND negocio_id=$9`,
+      [nombre, rol, sucursal, color, tel, email, iniciales, req.params.id, req.user.negocio_id]);
+    res.json({ ok: true });
+  } catch(e) { console.error('[500]', e.message); res.status(500).json({ error: e.message }); }
 });
 // ─── SUCURSALES ───────────────────────────────────────────
 app.get('/sucursales/:negocio_id', authMiddleware, async (req, res) => {
