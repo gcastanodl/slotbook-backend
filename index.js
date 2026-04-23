@@ -484,31 +484,6 @@ app.patch('/mi-negocio', authMiddleware, soloAdmin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
 });
-async function start() {
-  try {
-    await createTables();
-  
-    app.listen(PORT, () => {
-      console.log(`[SlotBook] ✓ Servidor en puerto ${PORT}`);
-      console.log(`[SlotBook] Health: http://localhost:${PORT}/health`);
-    });
-  } catch(err) {
-    console.error('[SlotBook] Error iniciando:', err);
-    process.exit(1);
-  }
-}
-
-start();
-
-// GET /negocios/:id
-app.get('/negocios/:id', authMiddleware, async (req, res) => {
-  try {
-    const r = await query('SELECT * FROM negocios WHERE id = $1', [req.params.id]);
-    if (!r.rows.length) return res.status(404).json({ error: 'No encontrado' });
-    res.json(r.rows[0]);
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
 // Rutas publicas para pagina de reservas
 app.get('/public/sucursales/:nid', async (req, res) => {
   try {
@@ -545,3 +520,28 @@ app.get('/public/negocio/:nid', async (req, res) => {
     res.json(r.rows[0]);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
+async function start() {
+  try {
+    await createTables();
+  
+    app.listen(PORT, () => {
+      console.log(`[SlotBook] ✓ Servidor en puerto ${PORT}`);
+      console.log(`[SlotBook] Health: http://localhost:${PORT}/health`);
+    });
+  } catch(err) {
+    console.error('[SlotBook] Error iniciando:', err);
+    process.exit(1);
+  }
+}
+
+start();
+
+// GET /negocios/:id
+app.get('/negocios/:id', authMiddleware, async (req, res) => {
+  try {
+    const r = await query('SELECT * FROM negocios WHERE id = $1', [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: 'No encontrado' });
+    res.json(r.rows[0]);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
