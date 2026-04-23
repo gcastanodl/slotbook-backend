@@ -86,6 +86,8 @@ async function createTables() {
   await query(`ALTER TABLE sucursales ADD COLUMN IF NOT EXISTS direccion TEXT DEFAULT ''`);
   await query(`ALTER TABLE sucursales ADD COLUMN IF NOT EXISTS tel TEXT DEFAULT ''`);
   await query(`ALTER TABLE sucursales ALTER COLUMN slug DROP NOT NULL`);
+  await query(`ALTER TABLE negocios ADD COLUMN IF NOT EXISTS horario JSONB`);
+  await query(`ALTER TABLE negocios ADD COLUMN IF NOT EXISTS descripcion TEXT DEFAULT ''`);
   console.log('[SlotBook] ✓ Tablas listas');
   await query(`CREATE TABLE IF NOT EXISTS facturas (
     id SERIAL PRIMARY KEY, negocio_id INTEGER NOT NULL,
@@ -415,7 +417,13 @@ app.put('/mi-negocio/horario', authMiddleware, soloAdmin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
 });
-
+app.put('/empleados/:id/horario', authMiddleware, soloAdmin, async (req, res) => {
+  try {
+    const { horario } = req.body;
+    await query('UPDATE empleados SET horario=$1 WHERE id=$2 AND negocio_id=$3', [JSON.stringify(horario), req.params.id, req.user.negocio_id]);
+    res.json({ ok: true });
+  } catch(e) { console.error('[500]', e.message); res.status(500).json({ error: e.message }); }
+});
 app.patch('/mi-negocio', authMiddleware, soloAdmin, async (req, res) => {
   try {
     const nid = req.user.negocio_id;
