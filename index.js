@@ -384,6 +384,58 @@ app.post('/facturas', authMiddleware, async (req, res) => {
     res.status(201).json({ id: r.rows[0].id });
   } catch(e) { console.error('[500 ERROR]', e.message); res.status(500).json({ error: e.message }); }
 });
+// ─── MI NEGOCIO (para admin del negocio, no superadmin) ──
+app.get('/mi-negocio', authMiddleware, async (req, res) => {
+  try {
+    const nid = req.user.negocio_id;
+    if (!nid) return res.status(400).json({ error: 'Sin negocio_id' });
+    const r = await query('SELECT * FROM negocios WHERE id = $1', [nid]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Negocio no encontrado' });
+    res.json(r.rows[0]);
+  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+app.put('/mi-negocio', authMiddleware, soloAdmin, async (req, res) => {
+  try {
+    const nid = req.user.negocio_id;
+    const { nombre, direccion, tel, wasa } = req.body;
+    if (!nombre) return res.status(400).json({ error: 'nombre requerido' });
+    await query('UPDATE negocios SET nombre=$1, direccion=$2, tel=$3, wasa=$4 WHERE id=$5',
+      [nombre, direccion||'', tel||'', wasa||'', nid]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+app.put('/mi-negocio/horario', authMiddleware, soloAdmin, async (req, res) => {
+  try {
+    const nid = req.user.negocio_id;
+    const { horario } = req.body;
+    if (!horario) return res.status(400).json({ error: 'Falta horario' });
+    await query('UPDATE negocios SET horario=$1::jsonb WHERE id=$2', [JSON.stringify(horario), nid]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+app.patch('/mi-negocio', authMiddleware, soloAdmin, async (req, res) => {
+  try {
+    const nid = req.user.negocio_id;
+    const allowed = ['tema','wa_config','gcal_config','nombre','direccion','tel','wasa','rnc'];
+    const jsonFields = ['wa_config','gcal_config','horario'];
+    const fields = [], values = [];
+    let i = 1;
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) {
+        fields.push(`${key} = $${i}${jsonFields.includes(key) ? '::jsonb' : ''}`);
+        values.push(jsonFields.includes(key) ? JSON.stringify(req.body[key]) : req.body[key]);
+        i++;
+      }
+    }
+    if (!fields.length) return res.status(400).json({ error: 'Sin campos' });
+    values.push(nid);
+    await query(`UPDATE negocios SET ${fields.join(', ')} WHERE id=$${i}`, values);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
 async function start() {
   try {
     await createTables();
