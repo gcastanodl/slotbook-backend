@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-console.log('[DEBUG] index.js version con sucursales:', new Date().toISOString());
+console.log('[DEBUG] index.js version con todas las rutas:', new Date().toISOString());
 //  SLOTBOOK BACKEND — Express + PostgreSQL
 //  Desplegado en Railway
 // ═══════════════════════════════════════════════════════════
