@@ -1,4 +1,5 @@
 // ═══════════════════════════════════════════════════════════
+console.log('[DEBUG] index.js version con todas las rutas:', new Date().toISOString());
 //  SLOTBOOK BACKEND — Express + PostgreSQL
 //  Desplegado en Railway
 // ═══════════════════════════════════════════════════════════
@@ -32,17 +33,30 @@ async function createTables() {
   await query(`CREATE TABLE IF NOT EXISTS negocios (
     id SERIAL PRIMARY KEY, nombre TEXT NOT NULL, tipo TEXT,
     color TEXT DEFAULT '#6366F1', ini TEXT, tel TEXT, whatsapp TEXT,
-    ciudad TEXT, direccion TEXT, descripcion TEXT,
+    wasa TEXT, ciudad TEXT, direccion TEXT, descripcion TEXT,
     plan TEXT DEFAULT 'starter', sucursales INTEGER DEFAULT 1,
     empleados TEXT DEFAULT '1-3', rnc TEXT, estado TEXT DEFAULT 'activo',
+    tema TEXT DEFAULT 'default',
+    horario JSONB DEFAULT '{}',
+    wa_config JSONB DEFAULT '{}',
+    gcal_config JSONB DEFAULT '{}',
     creado_en TIMESTAMP DEFAULT NOW()
   )`);
+
+  // Agregar columnas nuevas a negocios si ya existía la tabla sin ellas
+  await query(`ALTER TABLE negocios ADD COLUMN IF NOT EXISTS wasa TEXT`);
+  await query(`ALTER TABLE negocios ADD COLUMN IF NOT EXISTS tema TEXT DEFAULT 'default'`);
+  await query(`ALTER TABLE negocios ADD COLUMN IF NOT EXISTS horario JSONB DEFAULT '{}'`);
+  await query(`ALTER TABLE negocios ADD COLUMN IF NOT EXISTS wa_config JSONB DEFAULT '{}'`);
+  await query(`ALTER TABLE negocios ADD COLUMN IF NOT EXISTS gcal_config JSONB DEFAULT '{}'`);
+
   await query(`CREATE TABLE IF NOT EXISTS usuarios (
     id SERIAL PRIMARY KEY, negocio_id INTEGER,
     nombre TEXT NOT NULL, email TEXT NOT NULL UNIQUE, password TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'staff', sucursal_id TEXT DEFAULT 'Centro',
     activo INTEGER DEFAULT 1, creado_en TIMESTAMP DEFAULT NOW()
   )`);
+
   await query(`CREATE TABLE IF NOT EXISTS citas (
     id SERIAL PRIMARY KEY, negocio_id INTEGER,
     cliente TEXT, cliente_tel TEXT, servicio TEXT, barbero TEXT,
@@ -50,9 +64,11 @@ async function createTables() {
     estado TEXT DEFAULT 'pendiente', precio TEXT, duracion TEXT,
     notas TEXT, creado_en TIMESTAMP DEFAULT NOW()
   )`);
+
   await query(`CREATE TABLE IF NOT EXISTS superadmins (
     id SERIAL PRIMARY KEY, usuario TEXT NOT NULL UNIQUE, password TEXT NOT NULL
   )`);
+
   await query(`CREATE TABLE IF NOT EXISTS empleados (
     id SERIAL PRIMARY KEY, negocio_id INTEGER NOT NULL,
     key TEXT, nombre TEXT NOT NULL, iniciales TEXT, rol TEXT,
@@ -61,12 +77,14 @@ async function createTables() {
     horario JSONB DEFAULT '{}',
     creado_en TIMESTAMP DEFAULT NOW()
   )`);
+
   await query(`CREATE TABLE IF NOT EXISTS clientes (
     id SERIAL PRIMARY KEY, negocio_id INTEGER NOT NULL,
     nombre TEXT NOT NULL, tel TEXT, email TEXT, cedula TEXT,
     notas TEXT, sucursal TEXT DEFAULT 'Centro',
     creado_en TIMESTAMP DEFAULT NOW()
   )`);
+
   await query(`CREATE TABLE IF NOT EXISTS servicios (
     id SERIAL PRIMARY KEY, negocio_id INTEGER NOT NULL,
     nombre TEXT NOT NULL, duracion TEXT DEFAULT '30',
@@ -74,16 +92,41 @@ async function createTables() {
     activo INTEGER DEFAULT 1,
     creado_en TIMESTAMP DEFAULT NOW()
   )`);
-  console.log('[SlotBook] ✓ Tablas listas');
-}
 
-async function seedData() {
+  await query(`CREATE TABLE IF NOT EXISTS sucursales (
+    id SERIAL PRIMARY KEY, negocio_id INTEGER NOT NULL,
+    nombre TEXT NOT NULL, key TEXT,
+    direccion TEXT DEFAULT '', tel TEXT DEFAULT '',
+    activo INTEGER DEFAULT 1,
+    creado_en TIMESTAMP DEFAULT NOW()
+  )`);
+  await query(`ALTER TABLE sucursales ADD COLUMN IF NOT EXISTS key TEXT`);
+  await query(`ALTER TABLE sucursales ADD COLUMN IF NOT EXISTS direccion TEXT DEFAULT ''`);
+  await query(`ALTER TABLE sucursales ADD COLUMN IF NOT EXISTS tel TEXT DEFAULT ''`);
+
+  await query(`CREATE TABLE IF NOT EXISTS facturas (
+    id SERIAL PRIMARY KEY, negocio_id INTEGER,
+    numero TEXT, negocio TEXT, sucursal TEXT,
+    cliente TEXT, cliente_tel TEXT,
+    servicio TEXT, barbero TEXT,
+    fecha TEXT, hora TEXT, precio TEXT,
+    emitida TEXT, cita_id INTEGER,
+    creado_en TIMESTAMP DEFAULT NOW()
+  )`);
+  await query(`ALTER TABLE facturas ADD COLUMN IF NOT EXISTS negocio TEXT`);
+  await query(`ALTER TABLE facturas ADD COLUMN IF NOT EXISTS cita_id INTEGER`);
+
+  await query(`ALTER TABLE empleados ADD COLUMN IF NOT EXISTS horario JSONB DEFAULT '{}'`);
+
+  console.log('[SlotBook] ✓ Tablas listas');
+
   const sa = await query('SELECT id FROM superadmins WHERE usuario = $1', ['superadmin']);
   if (sa.rows.length === 0) {
     const hash = bcrypt.hashSync('slotbook2024', 10);
     await query('INSERT INTO superadmins (usuario, password) VALUES ($1, $2)', ['superadmin', hash]);
     console.log('[SlotBook] ✓ Superadmin creado');
   }
+
   const demo = await query("SELECT id FROM negocios WHERE nombre = $1", ['Barbería Elite Santiago']);
   if (demo.rows.length === 0) {
     const neg = await query(
@@ -100,6 +143,9 @@ async function seedData() {
     console.log('[SlotBook] ✓ Demo creado');
   }
 }
+
+// seedData no hacía nada diferente a createTables — se unificó arriba
+async function seedData() {}
 
 app.use(cors({ origin: '*', methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'], allowedHeaders: ['Content-Type','Authorization'] }));
 app.use(express.json());
@@ -120,8 +166,10 @@ function soloSuperAdmin(req, res, next) {
   next();
 }
 
+// ─── HEALTH ──────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString(), db: 'postgresql' }));
 
+// ─── AUTH ────────────────────────────────────────────────────
 app.post('/auth/login', async (req, res) => {
   try {
     const { email, password, usuario } = req.body;
@@ -142,6 +190,7 @@ app.post('/auth/login', async (req, res) => {
   } catch(e) { console.error(e); res.status(500).json({ error: 'Error del servidor' }); }
 });
 
+// ─── USERS ───────────────────────────────────────────────────
 app.get('/users', authMiddleware, soloAdmin, async (req, res) => {
   try {
     const nid = req.query.negocio_id || req.user.negocio_id;
@@ -174,6 +223,124 @@ app.delete('/users/:id', authMiddleware, soloAdmin, async (req, res) => {
   } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
 });
 
+// ─── NEGOCIOS ────────────────────────────────────────────────
+app.get('/negocios', authMiddleware, soloSuperAdmin, async (req, res) => {
+  try {
+    const r = await query('SELECT * FROM negocios ORDER BY creado_en DESC');
+    const negocios = await Promise.all(r.rows.map(async n => {
+      const c = await query('SELECT COUNT(*) as t FROM citas WHERE negocio_id = $1', [n.id]);
+      return { ...n, citas_total: parseInt(c.rows[0].t) || 0 };
+    }));
+    res.json(negocios);
+  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+app.post('/negocios', authMiddleware, soloSuperAdmin, async (req, res) => {
+  try {
+    const { nombre, tipo, color, ini, tel, whatsapp, ciudad, direccion, descripcion,
+            plan, sucursales, empleados, rnc, adminNombre, adminEmail, adminPass } = req.body;
+    if (!nombre||!adminEmail||!adminPass) return res.status(400).json({ error: 'nombre, adminEmail y adminPass requeridos' });
+    const neg = await query(
+      'INSERT INTO negocios (nombre,tipo,color,ini,tel,whatsapp,ciudad,direccion,descripcion,plan,sucursales,empleados,rnc) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id',
+      [nombre, tipo||'otro', color||'#6366F1', ini||nombre.substring(0,2).toUpperCase(),
+       tel||'', whatsapp||'', ciudad||'', direccion||'', descripcion||'', plan||'starter', sucursales||1, empleados||'1-3', rnc||'']
+    );
+    const hash = bcrypt.hashSync(adminPass, 10);
+    await query('INSERT INTO usuarios (negocio_id,nombre,email,password,role,sucursal_id) VALUES ($1,$2,$3,$4,$5,$6)',
+      [neg.rows[0].id, adminNombre||nombre, adminEmail.toLowerCase(), hash, 'admin', 'Centro']);
+    res.status(201).json({ id: neg.rows[0].id, nombre, plan });
+  } catch(e) { console.error(e); res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+// GET /negocios/:id — carga config del negocio (tema, WA, GCal, horario)
+app.get('/negocios/:id', authMiddleware, async (req, res) => {
+  try {
+    const r = await query('SELECT * FROM negocios WHERE id = $1', [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Negocio no encontrado' });
+    res.json(r.rows[0]);
+  } catch(e) { console.error(e); res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+// PUT /negocios/:id — guarda nombre, dirección, tel, wasa
+app.put('/negocios/:id', authMiddleware, async (req, res) => {
+  try {
+    const { nombre, direccion, tel, wasa } = req.body;
+    if (!nombre) return res.status(400).json({ error: 'nombre requerido' });
+    const r = await query(
+      `UPDATE negocios
+         SET nombre    = COALESCE($1, nombre),
+             direccion = COALESCE($2, direccion),
+             tel       = COALESCE($3, tel),
+             wasa      = COALESCE($4, wasa)
+       WHERE id = $5 RETURNING id`,
+      [nombre, direccion, tel, wasa, req.params.id]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Negocio no encontrado' });
+    res.json({ ok: true });
+  } catch(e) { console.error(e); res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+// PATCH /negocios/:id — actualiza campos individuales: tema, wa_config, gcal_config, estado, etc.
+app.patch('/negocios/:id', authMiddleware, async (req, res) => {
+  try {
+    const allowed = ['tema','wa_config','gcal_config','estado','plan',
+                     'nombre','direccion','tel','wasa','ciudad','rnc',
+                     'tipo','color','ini','whatsapp','descripcion','sucursales','empleados'];
+    const jsonFields = ['wa_config','gcal_config','horario'];
+    const fields = [];
+    const values = [];
+    let i = 1;
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) {
+        fields.push(`${key} = $${i}${jsonFields.includes(key) ? '::jsonb' : ''}`);
+        values.push(jsonFields.includes(key) ? JSON.stringify(req.body[key]) : req.body[key]);
+        i++;
+      }
+    }
+    if (!fields.length) return res.status(400).json({ error: 'Sin campos para actualizar' });
+    values.push(req.params.id);
+    const r = await query(
+      `UPDATE negocios SET ${fields.join(', ')} WHERE id = $${i} RETURNING id`,
+      values
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Negocio no encontrado' });
+    res.json({ ok: true });
+  } catch(e) { console.error(e); res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+// PUT /negocios/:id/horario — guarda el horario de atención del negocio
+app.put('/negocios/:id/horario', authMiddleware, async (req, res) => {
+  try {
+    const { horario } = req.body;
+    if (!horario) return res.status(400).json({ error: 'Falta el campo horario' });
+    const r = await query(
+      `UPDATE negocios SET horario = $1::jsonb WHERE id = $2 RETURNING id`,
+      [JSON.stringify(horario), req.params.id]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Negocio no encontrado' });
+    res.json({ ok: true });
+  } catch(e) { console.error(e); res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+// PATCH /negocios/:id/estado — activa o inactiva un negocio (superadmin)
+app.patch('/negocios/:id/estado', authMiddleware, soloSuperAdmin, async (req, res) => {
+  try {
+    const { estado } = req.body;
+    if (!['activo','inactivo'].includes(estado)) return res.status(400).json({ error: 'Estado inválido' });
+    await query('UPDATE negocios SET estado = $1 WHERE id = $2', [estado, req.params.id]);
+    res.json({ ok: true, estado });
+  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+// DELETE /negocios/:id — elimina un negocio (superadmin)
+app.delete('/negocios/:id', authMiddleware, soloSuperAdmin, async (req, res) => {
+  try {
+    await query('DELETE FROM negocios WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+// ─── EMPLEADOS ───────────────────────────────────────────────
 app.get('/empleados/:negocio_id', authMiddleware, async (req, res) => {
   try {
     const r = await query('SELECT * FROM empleados WHERE negocio_id = $1 AND activo = 1 ORDER BY nombre ASC', [req.params.negocio_id]);
@@ -209,6 +376,20 @@ app.patch('/empleados/:id', authMiddleware, soloAdmin, async (req, res) => {
   } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
 });
 
+// PUT /empleados/:id/horario — guarda horario individual de un empleado
+app.put('/empleados/:id/horario', authMiddleware, async (req, res) => {
+  try {
+    const { horario } = req.body;
+    if (!horario) return res.status(400).json({ error: 'Falta el campo horario' });
+    const r = await query(
+      `UPDATE empleados SET horario = $1::jsonb WHERE id = $2 RETURNING id`,
+      [JSON.stringify(horario), req.params.id]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Empleado no encontrado' });
+    res.json({ ok: true });
+  } catch(e) { console.error(e); res.status(500).json({ error: 'Error del servidor' }); }
+});
+
 app.delete('/empleados/:id', authMiddleware, soloAdmin, async (req, res) => {
   try {
     await query('UPDATE empleados SET activo = 0 WHERE id = $1', [req.params.id]);
@@ -216,6 +397,7 @@ app.delete('/empleados/:id', authMiddleware, soloAdmin, async (req, res) => {
   } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
 });
 
+// ─── CITAS ───────────────────────────────────────────────────
 app.get('/citas/:negocio_id', async (req, res) => {
   try {
     const r = await query('SELECT * FROM citas WHERE negocio_id = $1 ORDER BY fecha DESC, hora ASC', [req.params.negocio_id]);
@@ -227,9 +409,12 @@ app.post('/citas', async (req, res) => {
   try {
     const c = req.body;
     if (!c.fecha||!c.hora) return res.status(400).json({ error: 'fecha y hora requeridas' });
-    const r = await query('INSERT INTO citas (negocio_id,cliente,cliente_tel,servicio,barbero,barbero_key,fecha,hora,sucursal,estado,precio,duracion,notas) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id',
-      [c.negocio_id||1, c.cliente||'', c.cliente_tel||c.clienteTel||'', c.servicio||'', c.barbero||'', c.barbero_key||c.barberoKey||'',
-       c.fecha, c.hora, c.sucursal||'Centro', c.estado||'pendiente', c.precio||'0', c.duracion||'30 min', c.notas||'']);
+    const r = await query(
+      'INSERT INTO citas (negocio_id,cliente,cliente_tel,servicio,barbero,barbero_key,fecha,hora,sucursal,estado,precio,duracion,notas) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id',
+      [c.negocio_id||1, c.cliente||'', c.cliente_tel||c.clienteTel||'', c.servicio||'', c.barbero||'',
+       c.barbero_key||c.barberoKey||'', c.fecha, c.hora, c.sucursal||'Centro',
+       c.estado||'pendiente', c.precio||'0', c.duracion||'30 min', c.notas||'']
+    );
     res.status(201).json({ id: r.rows[0].id, ...c });
   } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
 });
@@ -242,58 +427,14 @@ app.patch('/citas/:id', authMiddleware, async (req, res) => {
   } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
 });
 
-app.get('/negocios', authMiddleware, soloSuperAdmin, async (req, res) => {
+app.delete('/citas/:id', authMiddleware, async (req, res) => {
   try {
-    const r = await query('SELECT * FROM negocios ORDER BY creado_en DESC');
-    const negocios = await Promise.all(r.rows.map(async n => {
-      const c = await query('SELECT COUNT(*) as t FROM citas WHERE negocio_id = $1', [n.id]);
-      return { ...n, citas_total: parseInt(c.rows[0].t) || 0 };
-    }));
-    res.json(negocios);
-  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
-});
-
-app.post('/negocios', authMiddleware, soloSuperAdmin, async (req, res) => {
-  try {
-    const { nombre, tipo, color, ini, tel, whatsapp, ciudad, direccion, descripcion,
-            plan, sucursales, empleados, rnc, adminNombre, adminEmail, adminPass } = req.body;
-    if (!nombre||!adminEmail||!adminPass) return res.status(400).json({ error: 'nombre, adminEmail y adminPass requeridos' });
-    const neg = await query('INSERT INTO negocios (nombre,tipo,color,ini,tel,whatsapp,ciudad,direccion,descripcion,plan,sucursales,empleados,rnc) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id',
-      [nombre, tipo||'otro', color||'#6366F1', ini||nombre.substring(0,2).toUpperCase(),
-       tel||'', whatsapp||'', ciudad||'', descripcion||'', descripcion||'', plan||'starter', sucursales||1, empleados||'1-3', rnc||'']);
-    const hash = bcrypt.hashSync(adminPass, 10);
-    await query('INSERT INTO usuarios (negocio_id,nombre,email,password,role,sucursal_id) VALUES ($1,$2,$3,$4,$5,$6)',
-      [neg.rows[0].id, adminNombre||nombre, adminEmail.toLowerCase(), hash, 'admin', 'Centro']);
-    res.status(201).json({ id: neg.rows[0].id, nombre, plan });
-  } catch(e) { console.error(e); res.status(500).json({ error: 'Error del servidor' }); }
-});
-
-app.patch('/negocios/:id', authMiddleware, soloSuperAdmin, async (req, res) => {
-  try {
-    const f = req.body;
-    await query(`UPDATE negocios SET
-      nombre=COALESCE($1,nombre), tipo=COALESCE($2,tipo), color=COALESCE($3,color),
-      ini=COALESCE($4,ini), tel=COALESCE($5,tel), whatsapp=COALESCE($6,whatsapp),
-      ciudad=COALESCE($7,ciudad), direccion=COALESCE($8,direccion),
-      descripcion=COALESCE($9,descripcion), plan=COALESCE($10,plan),
-      sucursales=COALESCE($11,sucursales), empleados=COALESCE($12,empleados),
-      rnc=COALESCE($13,rnc), estado=COALESCE($14,estado)
-      WHERE id=$15`,
-      [f.nombre,f.tipo,f.color,f.ini,f.tel,f.whatsapp,f.ciudad,f.direccion,
-       f.descripcion,f.plan,f.sucursales,f.empleados,f.rnc,f.estado,req.params.id]);
+    await query('DELETE FROM citas WHERE id = $1', [req.params.id]);
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
 });
 
-app.patch('/negocios/:id/estado', authMiddleware, soloSuperAdmin, async (req, res) => {
-  try {
-    const { estado } = req.body;
-    if (!['activo','inactivo'].includes(estado)) return res.status(400).json({ error: 'Estado inválido' });
-    await query('UPDATE negocios SET estado = $1 WHERE id = $2', [estado, req.params.id]);
-    res.json({ ok: true, estado });
-  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
-});
-// ─── CLIENTES ────────────────────────────────────────────
+// ─── CLIENTES ────────────────────────────────────────────────
 app.get('/clientes/:negocio_id', authMiddleware, async (req, res) => {
   try {
     const r = await query('SELECT * FROM clientes WHERE negocio_id = $1 ORDER BY nombre ASC', [req.params.negocio_id]);
@@ -320,7 +461,8 @@ app.delete('/clientes/:id', authMiddleware, soloAdmin, async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
 });
-// ─── SERVICIOS ────────────────────────────────────────────
+
+// ─── SERVICIOS ───────────────────────────────────────────────
 app.get('/servicios/:negocio_id', authMiddleware, async (req, res) => {
   try {
     const r = await query('SELECT * FROM servicios WHERE negocio_id = $1 AND activo = 1 ORDER BY nombre ASC', [req.params.negocio_id]);
@@ -340,6 +482,93 @@ app.post('/servicios', authMiddleware, soloAdmin, async (req, res) => {
     res.status(201).json({ id: r.rows[0].id, nombre });
   } catch(e) { console.error(e); res.status(500).json({ error: 'Error del servidor' }); }
 });
+
+app.put('/servicios/:id', authMiddleware, soloAdmin, async (req, res) => {
+  try {
+    const { nombre, duracion, precio, desc } = req.body;
+    await query(
+      `UPDATE servicios SET nombre=COALESCE($1,nombre), duracion=COALESCE($2,duracion),
+       precio=COALESCE($3,precio), descripcion=COALESCE($4,descripcion) WHERE id=$5`,
+      [nombre, duracion, precio, desc, req.params.id]
+    );
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+app.delete('/servicios/:id', authMiddleware, soloAdmin, async (req, res) => {
+  try {
+    await query('UPDATE servicios SET activo = 0 WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+// ─── SUCURSALES ──────────────────────────────────────────────
+app.get('/sucursales/:negocio_id', authMiddleware, async (req, res) => {
+  try {
+    const r = await query('SELECT * FROM sucursales WHERE negocio_id = $1 ORDER BY creado_en ASC', [req.params.negocio_id]);
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+app.post('/sucursales', authMiddleware, soloAdmin, async (req, res) => {
+  try {
+    const { nombre, key, direccion, tel, negocio_id } = req.body;
+    if (!nombre) return res.status(400).json({ error: 'nombre requerido' });
+    const nid = negocio_id || req.user.negocio_id;
+    const r = await query(
+      'INSERT INTO sucursales (negocio_id,nombre,key,direccion,tel) VALUES ($1,$2,$3,$4,$5) RETURNING id',
+      [nid, nombre, key||nombre, direccion||'', tel||'']
+    );
+    res.status(201).json({ id: r.rows[0].id, nombre, key: key||nombre });
+  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+app.put('/sucursales/:id', authMiddleware, soloAdmin, async (req, res) => {
+  try {
+    const { nombre, direccion, tel } = req.body;
+    await query(
+      `UPDATE sucursales SET nombre=COALESCE($1,nombre), direccion=COALESCE($2,direccion), tel=COALESCE($3,tel) WHERE id=$4`,
+      [nombre, direccion, tel, req.params.id]
+    );
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+// ─── FACTURAS ────────────────────────────────────────────────
+app.get('/facturas/:negocio_id', authMiddleware, async (req, res) => {
+  try {
+    const r = await query('SELECT * FROM facturas WHERE negocio_id = $1 ORDER BY creado_en DESC', [req.params.negocio_id]);
+    res.json(r.rows);
+  } catch(e) { console.error('[500 ERROR]', e.message); res.status(500).json({ error: e.message }); }
+});
+
+app.post('/facturas', authMiddleware, async (req, res) => {
+  try {
+    const { negocio_id, numero, negocio, sucursal, cliente, cliente_tel,
+            servicio, barbero, fecha, hora, precio, emitida, cita_id } = req.body;
+    const r = await query(
+      'INSERT INTO facturas (negocio_id,numero,negocio,sucursal,cliente,cliente_tel,servicio,barbero,fecha,hora,precio,emitida,cita_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id',
+      [negocio_id, numero, negocio, sucursal, cliente, cliente_tel||'',
+       servicio, barbero, fecha, hora, precio, emitida, cita_id||null]
+    );
+    res.status(201).json({ id: r.rows[0].id });
+  } catch(e) { console.error('[500 ERROR]', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// PATCH /facturas/:id/numero — actualiza el número de una factura
+app.patch('/facturas/:id/numero', authMiddleware, async (req, res) => {
+  try {
+    const { numero } = req.body;
+    const r = await query(
+      'UPDATE facturas SET numero = $1 WHERE id = $2 RETURNING id',
+      [numero, req.params.id]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Factura no encontrada' });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+// ─── START ───────────────────────────────────────────────────
 async function start() {
   try {
     await createTables();
