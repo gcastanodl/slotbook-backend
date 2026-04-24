@@ -276,30 +276,139 @@ app.post('/negocios', authMiddleware, soloSuperAdmin, async (req, res) => {
   } catch(e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
-app.patch('/negocios/:id', authMiddleware, soloSuperAdmin, async (req, res) => {
+// ═══════════════════════════════════════════════════════════
+// PATCH PARA index.js — Rutas de negocios para admin propio
+// Reemplaza los bloques correspondientes en tu index.js
+// ═══════════════════════════════════════════════════════════
+
+// ── GET /negocios/:id ────────────────────────────────────
+// Permite que el admin de un negocio vea sus propios datos
+// (antes era solo superadmin, ahora también el admin del negocio)
+app.get('/negocios/:id', authMiddleware, async (req, res) => {
   try {
-    const f = req.body;
-    await query(`UPDATE negocios SET
-      nombre=COALESCE($1,nombre), tipo=COALESCE($2,tipo), color=COALESCE($3,color),
-      ini=COALESCE($4,ini), tel=COALESCE($5,tel), whatsapp=COALESCE($6,whatsapp),
-      ciudad=COALESCE($7,ciudad), direccion=COALESCE($8,direccion),
-      descripcion=COALESCE($9,descripcion), plan=COALESCE($10,plan),
-      sucursales=COALESCE($11,sucursales), empleados=COALESCE($12,empleados),
-      rnc=COALESCE($13,rnc), estado=COALESCE($14,estado)
-      WHERE id=$15`,
-      [f.nombre,f.tipo,f.color,f.ini,f.tel,f.whatsapp,f.ciudad,f.direccion,
-       f.descripcion,f.plan,f.sucursales,f.empleados,f.rnc,f.estado,req.params.id]);
-    res.json({ ok: true });
-  } catch(e) { console.error('[500 ERROR]', e.message); res.status(500).json({ error: e.message }); }
+    const nid = parseInt(req.params.id);
+    // Superadmin puede ver cualquier negocio
+    // Admin normal solo puede ver su propio negocio
+    if (req.user.role !== 'superadmin' && req.user.negocio_id !== nid) {
+      return res.status(403).json({ error: 'Sin permiso' });
+    }
+    const r = await query('SELECT * FROM negocios WHERE id = $1', [nid]);
+    if (r.rows.length === 0) return res.status(404).json({ error: 'Negocio no encontrado' });
+    res.json(r.rows[0]);
+  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
 });
 
+// ── PUT /negocios/:id ─────────────────────────────────────
+// Admin del negocio puede actualizar nombre, tel, direccion, whatsapp
+app.put('/negocios/:id', authMiddleware, async (req, res) => {
+  try {
+    const nid = parseInt(req.params.id);
+    if (req.user.role !== 'superadmin' && req.user.negocio_id !== nid) {
+      return res.status(403).json({ error: 'Sin permiso' });
+    }
+    const { nombre, direccion, tel, wasa, whatsapp } = req.body;
+    if (!nombre) return res.status(400).json({ error: 'nombre requerido' });
+    await query(`UPDATE negocios SET
+      nombre    = COALESCE($1, nombre),
+      direccion = COALESCE($2, direccion),
+      tel       = COALESCE($3, tel),
+      whatsapp  = COALESCE($4, whatsapp)
+      WHERE id  = $5`,
+      [nombre, direccion || null, tel || null, wasa || whatsapp || null, nid]);
+    res.json({ ok: true });
+  } catch(e) { console.error(e); res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+// ── PATCH /negocios/:id ───────────────────────────────────
+// Admin puede actualizar tema, wa_config, gcal_config, roles, horario
+// Superadmin puede actualizar todo
+app.patch('/negocios/:id', authMiddleware, async (req, res) => {
+  try {
+    const nid = parseInt(req.params.id);
+    const isSA = req.user.role === 'superadmin';
+    if (!isSA && req.user.negocio_id !== nid) {
+      return res.status(403).json({ error: 'Sin permiso' });
+    }
+    const f = req.body;
+    await query(`UPDATE negocios SET
+      nombre      = COALESCE($1,  nombre),
+      tipo        = COALESCE($2,  tipo),
+      color       = COALESCE($3,  color),
+      ini         = COALESCE($4,  ini),
+      tel         = COALESCE($5,  tel),
+      whatsapp    = COALESCE($6,  whatsapp),
+      ciudad      = COALESCE($7,  ciudad),
+      direccion   = COALESCE($8,  direccion),
+      descripcion = COALESCE($9,  descripcion),
+      plan        = COALESCE($10, plan),
+      sucursales  = COALESCE($11, sucursales),
+      empleados   = COALESCE($12, empleados),
+      rnc         = COALESCE($13, rnc),
+      estado      = COALESCE($14, estado),
+      tema        = COALESCE($15, tema),
+      wa_config   = COALESCE($16, wa_config),
+      gcal_config = COALESCE($17, gcal_config),
+      roles       = COALESCE($18, roles),
+      horario     = COALESCE($19, horario)
+      WHERE id    = $20`,
+      [
+        f.nombre,
+        isSA ? f.tipo        : null,
+        isSA ? f.color       : null,
+        isSA ? f.ini         : null,
+        f.tel        || null,
+        f.whatsapp   || null,
+        isSA ? f.ciudad      : null,
+        f.direccion  || null,
+        isSA ? f.descripcion : null,
+        isSA ? f.plan        : null,
+        isSA ? f.sucursales  : null,
+        isSA ? f.empleados   : null,
+        isSA ? f.rnc         : null,
+        isSA ? f.estado      : null,
+        f.tema        || null,
+        f.wa_config   ? JSON.stringify(f.wa_config)   : null,
+        f.gcal_config ? JSON.stringify(f.gcal_config) : null,
+        f.roles       ? JSON.stringify(f.roles)       : null,
+        f.horario     ? JSON.stringify(f.horario)     : null,
+        nid
+      ]);
+    res.json({ ok: true });
+  } catch(e) { console.error(e); res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+// ── PUT /negocios/:id/horario ─────────────────────────────
+app.put('/negocios/:id/horario', authMiddleware, async (req, res) => {
+  try {
+    const nid = parseInt(req.params.id);
+    if (req.user.role !== 'superadmin' && req.user.negocio_id !== nid) {
+      return res.status(403).json({ error: 'Sin permiso' });
+    }
+    const { horario } = req.body;
+    if (!horario) return res.status(400).json({ error: 'horario requerido' });
+    await query('UPDATE negocios SET horario = $1 WHERE id = $2', [JSON.stringify(horario), nid]);
+    res.json({ ok: true });
+  } catch(e) { console.error(e); res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+// ── PATCH /negocios/:id/estado ───────────────────────────
 app.patch('/negocios/:id/estado', authMiddleware, soloSuperAdmin, async (req, res) => {
   try {
     const { estado } = req.body;
     if (!['activo','inactivo'].includes(estado)) return res.status(400).json({ error: 'Estado inválido' });
     await query('UPDATE negocios SET estado = $1 WHERE id = $2', [estado, req.params.id]);
     res.json({ ok: true, estado });
-  } catch(e) { console.error('[500 ERROR]', e.message); res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: 'Error del servidor' }); }
+});
+
+// ── DELETE /negocios/:id ─────────────────────────────────
+app.delete('/negocios/:id', authMiddleware, soloSuperAdmin, async (req, res) => {
+  try {
+    const r = await query('SELECT id FROM negocios WHERE id = $1', [req.params.id]);
+    if (r.rows.length === 0) return res.status(404).json({ error: 'Negocio no encontrado' });
+    await query('DELETE FROM negocios WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { console.error(e); res.status(500).json({ error: 'Error del servidor' }); }
 });
 // ─── CLIENTES ────────────────────────────────────────────
 app.get('/clientes/:negocio_id', authMiddleware, async (req, res) => {
