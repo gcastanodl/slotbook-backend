@@ -520,6 +520,20 @@ app.get('/public/negocio/:nid', async (req, res) => {
     res.json(r.rows[0]);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
+// GET /public/negocio/slug/:slug — buscar negocio por nombre slug
+app.get('/public/negocio/slug/:slug', async (req, res) => {
+  try {
+    const slug = req.params.slug.toLowerCase().replace(/-/g,' ');
+    const r = await query(
+      `SELECT id, nombre, ciudad, direccion, tel, wasa, horario FROM negocios 
+       WHERE LOWER(REPLACE(REPLACE(nombre,' ','-'),'.','')) LIKE $1 
+          OR LOWER(nombre) = $2 LIMIT 1`,
+      ['%' + slug.replace(/ /g,'-') + '%', slug]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'No encontrado' });
+    res.json(r.rows[0]);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
 async function start() {
   try {
     await createTables();
