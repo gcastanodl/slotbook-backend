@@ -544,23 +544,24 @@ app.get('/negocios/:id', authMiddleware, async (req, res) => {
     res.json(r.rows[0]);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
-// PUT /negocios/:id
+
+// PUT /negocios/:id — guardar nombre, direccion, tel, wasa
 app.put('/negocios/:id', authMiddleware, async (req, res) => {
   try {
     const { nombre, direccion, tel, wasa } = req.body;
     if (!nombre) return res.status(400).json({ error: 'nombre requerido' });
-    const r = await query('UPDATE negocios SET nombre=COALESCE($1,nombre),direccion=COALESCE($2,direccion),tel=COALESCE($3,tel),wasa=COALESCE($4,wasa) WHERE id=$5 RETURNING id',[nombre,direccion,tel,wasa,req.params.id]);
+    const r = await query('UPDATE negocios SET nombre=COALESCE(\,nombre),direccion=COALESCE(\,direccion),tel=COALESCE(\,tel),wasa=COALESCE(\,wasa) WHERE id=\ RETURNING id',[nombre,direccion,tel,wasa,req.params.id]);
     if (!r.rows.length) return res.status(404).json({ error: 'No encontrado' });
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// PUT /negocios/:id/horario
+// PUT /negocios/:id/horario — guardar horario de atencion
 app.put('/negocios/:id/horario', authMiddleware, async (req, res) => {
   try {
     const { horario } = req.body;
     if (!horario) return res.status(400).json({ error: 'Falta horario' });
-    const r = await query('UPDATE negocios SET horario=$1::jsonb WHERE id=$2 RETURNING id',[JSON.stringify(horario),req.params.id]);
+    const r = await query('UPDATE negocios SET horario=\::jsonb WHERE id=\ RETURNING id',[JSON.stringify(horario),req.params.id]);
     if (!r.rows.length) return res.status(404).json({ error: 'No encontrado' });
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
