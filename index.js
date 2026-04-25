@@ -517,7 +517,7 @@ app.get('/public/citas/:nid', async (req, res) => {
 app.get('/public/negocio/slug/:slug', async (req, res) => {
   try {
     const slug = req.params.slug.toLowerCase().replace(/-/g, ' ');
-    const r = await query('SELECT id,nombre,ciudad,direccion,tel,wasa,horario FROM negocios WHERE LOWER(nombre) LIKE $1 LIMIT 1', ['%' + slug + '%']);
+    const r = await query('SELECT id,nombre,ciudad,direccion,tel,whatsapp,horario FROM negocios WHERE LOWER(nombre) LIKE $1 LIMIT 1', ['%' + slug + '%']);
     if (!r.rows.length) return res.status(404).json({ error: 'No encontrado' });
     res.json(r.rows[0]);
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -525,7 +525,7 @@ app.get('/public/negocio/slug/:slug', async (req, res) => {
 
 app.get('/public/negocio/:nid', async (req, res) => {
   try {
-    const r = await query('SELECT id,nombre,ciudad,direccion,tel,wasa,horario FROM negocios WHERE id = $1', [req.params.nid]);
+    const r = await query('SELECT id,nombre,ciudad,direccion,tel,whatsapp,horario FROM negocios WHERE id = $1', [req.params.nid]);
     if (!r.rows.length) return res.status(404).json({ error: 'No encontrado' });
     res.json(r.rows[0]);
   } catch(e) { res.status(500).json({ error: e.message }); }
