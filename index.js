@@ -243,8 +243,7 @@ app.post('/citas', async (req, res) => {
 app.patch('/citas/:id', authMiddleware, async (req, res) => {
   try {
     const { estado, notas, sucursal } = req.body;
-    await query('UPDATE citas SET estado = $1, notas = COALESCE($2, notas), sucursal = COALESCE($3, sucursal) WHERE id = $4', [estado, notas, sucursal||null, req.params.id]);
-    res.json({ ok: true });
+await query('UPDATE citas SET estado = $1, notas = COALESCE($2, notas), sucursal = CASE WHEN $3::TEXT IS NOT NULL THEN $3 ELSE sucursal END WHERE id = $4', [estado, notas, sucursal||null, req.params.id]);    res.json({ ok: true });
   } catch(e) { console.error('[500 ERROR]', e.message); res.status(500).json({ error: e.message }); }
 });
 
