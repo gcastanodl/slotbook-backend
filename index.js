@@ -235,7 +235,7 @@ app.post('/citas', async (req, res) => {
     if (!c.fecha||!c.hora) return res.status(400).json({ error: 'fecha y hora requeridas' });
     const r = await query('INSERT INTO citas (negocio_id,cliente,cliente_tel,servicio,barbero,barbero_key,fecha,hora,sucursal,estado,precio,duracion,notas) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id',
       [c.negocio_id||1, c.cliente||'', c.cliente_tel||c.clienteTel||'', c.servicio||'', c.barbero||'', c.barbero_key||c.barberoKey||'',
-       c.fecha, c.hora, c.sucursal||'Centro', c.estado||'pendiente', c.precio||'0', c.duracion||'30 min', c.notas||'']);
+       c.fecha, c.hora, c.sucursal||'', c.estado||'pendiente', c.precio||'0', c.duracion||'30 min', c.notas||'']);
     res.status(201).json({ id: r.rows[0].id, ...c });
   } catch(e) { console.error('[500 ERROR]', e.message); res.status(500).json({ error: e.message }); }
 });
