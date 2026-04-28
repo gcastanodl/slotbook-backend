@@ -147,7 +147,7 @@ app.post('/upload', authMiddleware, upload.single('image'), async (req, res) => 
     const IMGBB_KEY = process.env.IMGBB_KEY;
     if (!IMGBB_KEY) return res.status(500).json({ error: 'IMGBB_KEY no configurada' });
     const FormData = require('form-data');
-    const fetch = require('node-fetch');
+    const { default: fetch } = await import('node-fetch');
     const form = new FormData();
     form.append('image', req.file.buffer.toString('base64'));
     const r = await fetch('https://api.imgbb.com/1/upload?key=' + IMGBB_KEY, { method: 'POST', body: form });
