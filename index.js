@@ -1,7 +1,7 @@
-// ═══════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 console.log('[DEBUG] index.js version con todas las rutas:', new Date().toISOString());
-//  SLOTBOOK BACKEND — Express + PostgreSQL
-// ═══════════════════════════════════════════════════════════
+//  SLOTBOOK BACKEND â€” Express + PostgreSQL
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 const express  = require('express');
 const cors     = require('cors');
@@ -111,9 +111,9 @@ async function createTables() {
   if (sa.rows.length === 0) {
     const hash = bcrypt.hashSync('slotbook2024', 10);
     await query('INSERT INTO superadmins (usuario, password) VALUES ($1, $2)', ['superadmin', hash]);
-    console.log('[SlotBook] ✓ Superadmin creado');
+    console.log('[SlotBook] âœ“ Superadmin creado');
   }
-  console.log('[SlotBook] ✓ Tablas listas');
+  console.log('[SlotBook] âœ“ Tablas listas');
 }
 
 app.use(cors({ origin: '*', methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'], allowedHeaders: ['Content-Type','Authorization'] }));
@@ -124,7 +124,7 @@ function authMiddleware(req, res, next) {
   const token  = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Token requerido' });
   try { req.user = jwt.verify(token, JWT_SECRET); next(); }
-  catch { return res.status(401).json({ error: 'Token inválido' }); }
+  catch { return res.status(401).json({ error: 'Token invÃ¡lido' }); }
 }
 function soloAdmin(req, res, next) {
   if (req.user?.role !== 'admin' && req.user?.role !== 'superadmin') return res.status(403).json({ error: 'Solo administradores' });
@@ -137,13 +137,13 @@ function soloSuperAdmin(req, res, next) {
 
 app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString(), db: 'postgresql' }));
 
-// ─── UPLOAD IMAGEN (proxy a ImgBB) ───────────────────────
+// â”€â”€â”€ UPLOAD IMAGEN (proxy a ImgBB) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 app.post('/upload', authMiddleware, upload.single('image'), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No se recibió imagen' });
+    if (!req.file) return res.status(400).json({ error: 'No se recibiÃ³ imagen' });
     const IMGBB_KEY = process.env.IMGBB_KEY;
     if (!IMGBB_KEY) return res.status(500).json({ error: 'IMGBB_KEY no configurada' });
     const FormData = require('form-data');
@@ -170,12 +170,12 @@ app.post('/auth/login', async (req, res) => {
       const token = jwt.sign({ id: sa.rows[0].id, role: 'superadmin', usuario }, JWT_SECRET, { expiresIn: '12h' });
       return res.json({ token, user: { id: sa.rows[0].id, nombre: 'SuperAdmin', email: 'superadmin', role: 'superadmin' } });
     }
-    if (!email || !password) return res.status(400).json({ error: 'Email y contraseña requeridos' });
+    if (!email || !password) return res.status(400).json({ error: 'Email y contraseÃ±a requeridos' });
     const u = await query('SELECT u.*, n.estado as negocio_estado FROM usuarios u JOIN negocios n ON u.negocio_id = n.id WHERE u.email = $1 AND u.activo = 1', [email.toLowerCase().trim()]);
     if (u.rows.length === 0 || !bcrypt.compareSync(password, u.rows[0].password))
       return res.status(401).json({ error: 'Credenciales incorrectas' });
     if (u.rows[0].negocio_estado === 'inactivo')
-      return res.status(403).json({ error: 'Tu cuenta está suspendida. Contacta al administrador.' });
+      return res.status(403).json({ error: 'Tu cuenta estÃ¡ suspendida. Contacta al administrador.' });
     const user = u.rows[0];
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role, negocio_id: user.negocio_id }, JWT_SECRET, { expiresIn: '8h' });
     res.json({ token, user: { id: user.id, nombre: user.nombre, email: user.email, role: user.role, sucursalId: user.sucursal_id, negocio_id: user.negocio_id } });
@@ -335,7 +335,7 @@ app.post('/negocios', authMiddleware, soloSuperAdmin, async (req, res) => {
 app.post('/negocios/:id/reset-pass', authMiddleware, soloSuperAdmin, async (req, res) => {
   try {
     const { newPass } = req.body;
-    if (!newPass || newPass.length < 4) return res.status(400).json({ error: 'Contraseña muy corta' });
+    if (!newPass || newPass.length < 4) return res.status(400).json({ error: 'ContraseÃ±a muy corta' });
     const hash = bcrypt.hashSync(newPass, 10);
     await query('UPDATE usuarios SET password=$1 WHERE negocio_id=$2 AND role=$3', [hash, req.params.id, 'admin']);
     res.json({ ok: true });
@@ -398,7 +398,7 @@ app.patch('/negocios/:id', authMiddleware, async (req, res) => {
 app.patch('/negocios/:id/estado', authMiddleware, soloSuperAdmin, async (req, res) => {
   try {
     const { estado } = req.body;
-    if (!['activo','inactivo'].includes(estado)) return res.status(400).json({ error: 'Estado inválido' });
+    if (!['activo','inactivo'].includes(estado)) return res.status(400).json({ error: 'Estado invÃ¡lido' });
     await query('UPDATE negocios SET estado = $1 WHERE id = $2', [estado, req.params.id]);
     res.json({ ok: true, estado });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -644,7 +644,7 @@ async function start() {
   try {
     await createTables();
     app.listen(PORT, () => {
-      console.log(`[SlotBook] ✓ Servidor en puerto ${PORT}`);
+      console.log(`[SlotBook] âœ“ Servidor en puerto ${PORT}`);
       console.log(`[SlotBook] Health: http://localhost:${PORT}/health`);
     });
   } catch(err) {
