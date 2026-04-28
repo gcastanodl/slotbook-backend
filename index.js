@@ -90,7 +90,6 @@ async function createTables() {
     cita_id INTEGER, creado_en TIMESTAMP DEFAULT NOW()
   )`);
 
-  // ─── ALTER TABLE — columnas opcionales ───────────────────
   await query(`ALTER TABLE sucursales ADD COLUMN IF NOT EXISTS key TEXT`);
   await query(`ALTER TABLE sucursales ADD COLUMN IF NOT EXISTS direccion TEXT DEFAULT ''`);
   await query(`ALTER TABLE sucursales ADD COLUMN IF NOT EXISTS tel TEXT DEFAULT ''`);
@@ -103,8 +102,9 @@ async function createTables() {
   await query(`ALTER TABLE servicios ADD COLUMN IF NOT EXISTS sucursales TEXT DEFAULT 'todas'`);
   await query(`ALTER TABLE servicios ADD COLUMN IF NOT EXISTS barberos TEXT DEFAULT 'todos'`);
   await query(`ALTER TABLE citas ADD COLUMN IF NOT EXISTS cliente_email TEXT DEFAULT ''`);
+  await query(`ALTER TABLE empleados ADD COLUMN IF NOT EXISTS foto_url TEXT DEFAULT ''`);
+  await query(`ALTER TABLE sucursales ADD COLUMN IF NOT EXISTS foto_url TEXT DEFAULT ''`);
 
-  // Silenciar error de columna slug que puede no existir
   try { await query(`ALTER TABLE sucursales ALTER COLUMN slug DROP NOT NULL`); } catch(e) {}
 
   const sa = await query('SELECT id FROM superadmins WHERE usuario = $1', ['superadmin']);
@@ -135,10 +135,31 @@ function soloSuperAdmin(req, res, next) {
   next();
 }
 
-// ─── HEALTH ──────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString(), db: 'postgresql' }));
 
-// ─── AUTH ─────────────────────────────────────────────────
+// ─── UPLOAD IMAGEN (proxy a ImgBB) ───────────────────────
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+
+app.post('/upload', authMiddleware, upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No se recibió imagen' });
+    const IMGBB_KEY = process.env.IMGBB_KEY;
+    if (!IMGBB_KEY) return res.status(500).json({ error: 'IMGBB_KEY no configurada' });
+    const FormData = require('form-data');
+    const fetch = require('node-fetch');
+    const form = new FormData();
+    form.append('image', req.file.buffer.toString('base64'));
+    const r = await fetch('https://api.imgbb.com/1/upload?key=' + IMGBB_KEY, { method: 'POST', body: form });
+    const data = await r.json();
+    if (data.success) {
+      res.json({ url: data.data.display_url });
+    } else {
+      res.status(500).json({ error: 'Error ImgBB', detail: data });
+    }
+  } catch(e) { console.error(e); res.status(500).json({ error: e.message }); }
+});
+
 app.post('/auth/login', async (req, res) => {
   try {
     const { email, password, usuario } = req.body;
@@ -161,7 +182,6 @@ app.post('/auth/login', async (req, res) => {
   } catch(e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
-// ─── USUARIOS ─────────────────────────────────────────────
 app.get('/users', authMiddleware, soloAdmin, async (req, res) => {
   try {
     const nid = req.query.negocio_id || req.user.negocio_id;
@@ -194,7 +214,6 @@ app.delete('/users/:id', authMiddleware, soloAdmin, async (req, res) => {
   } catch(e) { console.error('[500]', e.message); res.status(500).json({ error: e.message }); }
 });
 
-// ─── EMPLEADOS ────────────────────────────────────────────
 app.get('/empleados/:negocio_id', authMiddleware, async (req, res) => {
   try {
     const r = await query('SELECT * FROM empleados WHERE negocio_id = $1 AND activo = 1 ORDER BY nombre ASC', [req.params.negocio_id]);
@@ -204,41 +223,41 @@ app.get('/empleados/:negocio_id', authMiddleware, async (req, res) => {
 
 app.post('/empleados', authMiddleware, soloAdmin, async (req, res) => {
   try {
-    const { nombre, iniciales, rol, sucursal, color, tel, email, horario, negocio_id } = req.body;
+    const { nombre, iniciales, rol, sucursal, color, tel, email, horario, negocio_id, foto_url } = req.body;
     if (!nombre) return res.status(400).json({ error: 'nombre requerido' });
     const nid = negocio_id || req.user.negocio_id;
     const ini = iniciales || nombre.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();
     const key = ini + Date.now().toString().slice(-4);
     const r = await query(
-      'INSERT INTO empleados (negocio_id,key,nombre,iniciales,rol,sucursal,color,tel,email,horario) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id',
-      [nid, key, nombre, ini, rol||'Barbero', sucursal||'Centro', color||'#6366F1', tel||'', email||'', JSON.stringify(horario||{})]
+      'INSERT INTO empleados (negocio_id,key,nombre,iniciales,rol,sucursal,color,tel,email,horario,foto_url) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id',
+      [nid, key, nombre, ini, rol||'Barbero', sucursal||'', color||'#6366F1', tel||'', email||'', JSON.stringify(horario||{}), foto_url||'']
     );
-    res.status(201).json({ id: r.rows[0].id, key, nombre, iniciales: ini, rol: rol||'Barbero', sucursal: sucursal||'Centro', color: color||'#6366F1' });
+    res.status(201).json({ id: r.rows[0].id, key, nombre, iniciales: ini, rol: rol||'Barbero', sucursal: sucursal||'', color: color||'#6366F1' });
   } catch(e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
 app.put('/empleados/:id', authMiddleware, soloAdmin, async (req, res) => {
   try {
-    const { nombre, rol, sucursal, color, tel, email, iniciales } = req.body;
+    const { nombre, rol, sucursal, color, tel, email, iniciales, foto_url } = req.body;
     await query(`UPDATE empleados SET
       nombre=COALESCE($1,nombre), rol=COALESCE($2,rol), sucursal=COALESCE($3,sucursal),
       color=COALESCE($4,color), tel=COALESCE($5,tel), email=COALESCE($6,email),
-      iniciales=COALESCE($7,iniciales)
-      WHERE id=$8 AND negocio_id=$9`,
-      [nombre, rol, sucursal, color, tel, email, iniciales, req.params.id, req.user.negocio_id]);
+      iniciales=COALESCE($7,iniciales), foto_url=COALESCE($8,foto_url)
+      WHERE id=$9 AND negocio_id=$10`,
+      [nombre, rol, sucursal, color, tel, email, iniciales, foto_url||null, req.params.id, req.user.negocio_id]);
     res.json({ ok: true });
   } catch(e) { console.error('[500]', e.message); res.status(500).json({ error: e.message }); }
 });
 
 app.patch('/empleados/:id', authMiddleware, soloAdmin, async (req, res) => {
   try {
-    const { nombre, rol, sucursal, color, tel, email, horario, activo } = req.body;
+    const { nombre, rol, sucursal, color, tel, email, horario, activo, foto_url } = req.body;
     await query(`UPDATE empleados SET
       nombre=COALESCE($1,nombre), rol=COALESCE($2,rol), sucursal=COALESCE($3,sucursal),
       color=COALESCE($4,color), tel=COALESCE($5,tel), email=COALESCE($6,email),
-      horario=COALESCE($7,horario), activo=COALESCE($8,activo)
-      WHERE id=$9`,
-      [nombre, rol, sucursal, color, tel, email, horario ? JSON.stringify(horario) : null, activo, req.params.id]);
+      horario=COALESCE($7,horario), activo=COALESCE($8,activo), foto_url=COALESCE($9,foto_url)
+      WHERE id=$10`,
+      [nombre, rol, sucursal, color, tel, email, horario ? JSON.stringify(horario) : null, activo, foto_url||null, req.params.id]);
     res.json({ ok: true });
   } catch(e) { console.error('[500]', e.message); res.status(500).json({ error: e.message }); }
 });
@@ -258,7 +277,6 @@ app.delete('/empleados/:id', authMiddleware, soloAdmin, async (req, res) => {
   } catch(e) { console.error('[500]', e.message); res.status(500).json({ error: e.message }); }
 });
 
-// ─── CITAS ────────────────────────────────────────────────
 app.get('/citas/:negocio_id', async (req, res) => {
   try {
     const r = await query('SELECT * FROM citas WHERE negocio_id = $1 ORDER BY fecha DESC, hora ASC', [req.params.negocio_id]);
@@ -274,20 +292,19 @@ app.post('/citas', async (req, res) => {
       'INSERT INTO citas (negocio_id,cliente,cliente_tel,cliente_email,servicio,barbero,barbero_key,fecha,hora,sucursal,estado,precio,duracion,notas) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id',
       [c.negocio_id||1, c.cliente||'', c.cliente_tel||c.clienteTel||'', c.cliente_email||'',
        c.servicio||'', c.barbero||'', c.barbero_key||c.barberoKey||'',
-       c.fecha, c.hora, c.sucursal||'Centro', c.estado||'pendiente', c.precio||'0', c.duracion||'30 min', c.notas||'']);
+       c.fecha, c.hora, c.sucursal||'', c.estado||'pendiente', c.precio||'0', c.duracion||'30 min', c.notas||'']);
     res.status(201).json({ id: r.rows[0].id, ...c });
   } catch(e) { console.error('[500]', e.message); res.status(500).json({ error: e.message }); }
 });
 
 app.patch('/citas/:id', authMiddleware, async (req, res) => {
   try {
-    const { estado, notas } = req.body;
-    await query('UPDATE citas SET estado = $1, notas = COALESCE($2, notas) WHERE id = $3', [estado, notas, req.params.id]);
+    const { estado, notas, sucursal } = req.body;
+    await query('UPDATE citas SET estado = $1, notas = COALESCE($2, notas), sucursal = CASE WHEN $3::TEXT IS NOT NULL THEN $3 ELSE sucursal END WHERE id = $4', [estado, notas, sucursal||null, req.params.id]);
     res.json({ ok: true });
   } catch(e) { console.error('[500]', e.message); res.status(500).json({ error: e.message }); }
 });
 
-// ─── NEGOCIOS ─────────────────────────────────────────────
 app.get('/negocios', authMiddleware, soloSuperAdmin, async (req, res) => {
   try {
     const r = await query('SELECT * FROM negocios ORDER BY creado_en DESC');
@@ -315,7 +332,6 @@ app.post('/negocios', authMiddleware, soloSuperAdmin, async (req, res) => {
   } catch(e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
-// ─── RESET CONTRASEÑA NEGOCIO ─────────────────────────────
 app.post('/negocios/:id/reset-pass', authMiddleware, soloSuperAdmin, async (req, res) => {
   try {
     const { newPass } = req.body;
@@ -409,7 +425,6 @@ app.delete('/negocios/:id', authMiddleware, soloSuperAdmin, async (req, res) => 
   } catch(e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
-// ─── MI NEGOCIO ───────────────────────────────────────────
 app.get('/mi-negocio', authMiddleware, async (req, res) => {
   try {
     const nid = req.user.negocio_id;
@@ -462,7 +477,6 @@ app.patch('/mi-negocio', authMiddleware, soloAdmin, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// ─── CLIENTES ─────────────────────────────────────────────
 app.get('/clientes/:negocio_id', authMiddleware, async (req, res) => {
   try {
     const r = await query('SELECT * FROM clientes WHERE negocio_id = $1 ORDER BY nombre ASC', [req.params.negocio_id]);
@@ -477,7 +491,7 @@ app.post('/clientes', authMiddleware, async (req, res) => {
     const nid = negocio_id || req.user.negocio_id;
     const r = await query(
       'INSERT INTO clientes (negocio_id,nombre,tel,email,cedula,notas,sucursal) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id',
-      [nid, nombre, tel||'', email||'', cedula||'', notas||'', sucursal||'Centro']
+      [nid, nombre, tel||'', email||'', cedula||'', notas||'', sucursal||'']
     );
     res.status(201).json({ id: r.rows[0].id, nombre });
   } catch(e) { console.error(e); res.status(500).json({ error: e.message }); }
@@ -490,7 +504,6 @@ app.delete('/clientes/:id', authMiddleware, soloAdmin, async (req, res) => {
   } catch(e) { console.error('[500]', e.message); res.status(500).json({ error: e.message }); }
 });
 
-// ─── SERVICIOS ────────────────────────────────────────────
 app.get('/servicios/:negocio_id', authMiddleware, async (req, res) => {
   try {
     const r = await query('SELECT * FROM servicios WHERE negocio_id = $1 AND activo = 1 ORDER BY nombre ASC', [req.params.negocio_id]);
@@ -528,7 +541,6 @@ app.delete('/servicios/:id', authMiddleware, soloAdmin, async (req, res) => {
   } catch(e) { console.error('[500]', e.message); res.status(500).json({ error: e.message }); }
 });
 
-// ─── SUCURSALES ───────────────────────────────────────────
 app.get('/sucursales/:negocio_id', authMiddleware, async (req, res) => {
   try {
     const r = await query('SELECT * FROM sucursales WHERE negocio_id = $1 ORDER BY creado_en ASC', [req.params.negocio_id]);
@@ -538,18 +550,17 @@ app.get('/sucursales/:negocio_id', authMiddleware, async (req, res) => {
 
 app.post('/sucursales', authMiddleware, soloAdmin, async (req, res) => {
   try {
-    const { nombre, key, direccion, tel, negocio_id } = req.body;
+    const { nombre, key, direccion, tel, negocio_id, foto_url } = req.body;
     if (!nombre) return res.status(400).json({ error: 'nombre requerido' });
     const nid = negocio_id || req.user.negocio_id;
     const r = await query(
-      'INSERT INTO sucursales (negocio_id,nombre,key,direccion,tel) VALUES ($1,$2,$3,$4,$5) RETURNING id',
-      [nid, nombre, key||nombre, direccion||'', tel||'']
+      'INSERT INTO sucursales (negocio_id,nombre,key,direccion,tel,foto_url) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+      [nid, nombre, key||nombre, direccion||'', tel||'', foto_url||'']
     );
     res.status(201).json({ id: r.rows[0].id, nombre, key: key||nombre });
   } catch(e) { console.error('[500]', e.message); res.status(500).json({ error: e.message }); }
 });
 
-// ─── FACTURAS ─────────────────────────────────────────────
 app.get('/facturas/:negocio_id', authMiddleware, async (req, res) => {
   try {
     const r = await query('SELECT * FROM facturas WHERE negocio_id = $1 ORDER BY emitida DESC', [req.params.negocio_id]);
@@ -568,7 +579,6 @@ app.post('/facturas', authMiddleware, async (req, res) => {
   } catch(e) { console.error('[500]', e.message); res.status(500).json({ error: e.message }); }
 });
 
-// ─── ENDPOINTS PÚBLICOS (sin autenticación) ───────────────
 app.get('/public/negocio/:id', async (req, res) => {
   try {
     const r = await query('SELECT id,nombre,tipo,color,ini,tel,whatsapp,ciudad,direccion,horario FROM negocios WHERE id=$1', [req.params.id]);
@@ -588,7 +598,7 @@ app.get('/public/negocio/slug/:slug', async (req, res) => {
 
 app.get('/public/sucursales/:negocio_id', async (req, res) => {
   try {
-    const r = await query('SELECT id,nombre,key,direccion,tel FROM sucursales WHERE negocio_id=$1 AND activo=1 ORDER BY creado_en ASC', [req.params.negocio_id]);
+    const r = await query('SELECT id,nombre,key,direccion,tel,foto_url FROM sucursales WHERE negocio_id=$1 ORDER BY creado_en ASC', [req.params.negocio_id]);
     res.json(r.rows);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -602,7 +612,7 @@ app.get('/public/servicios/:negocio_id', async (req, res) => {
 
 app.get('/public/empleados/:negocio_id', async (req, res) => {
   try {
-    const r = await query('SELECT id,nombre,key,iniciales,rol,sucursal,color,horario FROM empleados WHERE negocio_id=$1 AND activo=1 ORDER BY nombre ASC', [req.params.negocio_id]);
+    const r = await query('SELECT id,nombre,key,iniciales,rol,sucursal,color,horario,foto_url FROM empleados WHERE negocio_id=$1 AND activo=1 ORDER BY nombre ASC', [req.params.negocio_id]);
     res.json(r.rows);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -618,7 +628,6 @@ app.get('/public/citas/:negocio_id', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// ─── START ────────────────────────────────────────────────
 async function start() {
   try {
     await createTables();
