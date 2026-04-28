@@ -561,6 +561,18 @@ app.post('/sucursales', authMiddleware, soloAdmin, async (req, res) => {
   } catch(e) { console.error('[500]', e.message); res.status(500).json({ error: e.message }); }
 });
 
+app.patch('/sucursales/:id', authMiddleware, soloAdmin, async (req, res) => {
+  try {
+    const { nombre, direccion, tel, foto_url } = req.body;
+    await query(`UPDATE sucursales SET
+      nombre=COALESCE($1,nombre), direccion=COALESCE($2,direccion),
+      tel=COALESCE($3,tel), foto_url=COALESCE($4,foto_url)
+      WHERE id=$5`,
+      [nombre||null, direccion||null, tel||null, foto_url||null, req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { console.error('[500]', e.message); res.status(500).json({ error: e.message }); }
+});
+
 app.get('/facturas/:negocio_id', authMiddleware, async (req, res) => {
   try {
     const r = await query('SELECT * FROM facturas WHERE negocio_id = $1 ORDER BY emitida DESC', [req.params.negocio_id]);
