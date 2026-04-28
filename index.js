@@ -1,6 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-console.log('[DEBUG] SlotBook Supabase backend:', new Date().toISOString());
-//  SLOTBOOK BACKEND — Express + Supabase
+console.log('[DEBUG] SlotBook Supabase backend:', new Date().toISOString());//  SLOTBOOK BACKEND — Express + Supabase
 // ═══════════════════════════════════════════════════════════
 
 const express  = require('express');
