@@ -1,5 +1,6 @@
 // ═══════════════════════════════════════════════════════════
-console.log('[DEBUG] SlotBook Supabase backend:', new Date().toISOString());//  SLOTBOOK BACKEND — Express + Supabase
+console.log('[DEBUG] SlotBook Supabase backend:', new Date().toISOString());
+//  SLOTBOOK BACKEND — Express + Supabase
 // ═══════════════════════════════════════════════════════════
 
 const express  = require('express');
@@ -60,7 +61,8 @@ app.post('/upload', authMiddleware, upload.single('image'), async (req, res) => 
   try {
     if (!req.file) return res.status(400).json({ error: 'No se recibió imagen' });
     const ext      = req.file.mimetype.split('/')[1] || 'jpg';
-    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const negocioId = req.user.negocio_id || req.user.id || 'shared';
+    const fileName = `${negocioId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
     const { data, error } = await supabase.storage
       .from('fotos')
       .upload(fileName, req.file.buffer, { contentType: req.file.mimetype, upsert: false });
