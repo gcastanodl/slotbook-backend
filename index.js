@@ -88,6 +88,84 @@ app.delete('/upload', authMiddleware, async (req, res) => {
   } catch(e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
+// ─── WHATSAPP BUSINESS API ───────────────────────────────
+async function enviarMensajeWA(negocio_id, toNumber, message) {
+  try {
+    const { data: neg } = await supabase.from('negocios').select('wa_config').eq('id', negocio_id).single();
+    if (!neg?.wa_config) return { ok: false, error: 'WA no configurado' };
+    const cfg = neg.wa_config;
+    if (!cfg.provider || !toNumber) return { ok: false, error: 'Sin proveedor o número' };
+
+    if (cfg.provider === 'meta') {
+      // Meta Cloud API
+      const r = await fetch(`https://graph.facebook.com/v18.0/${cfg.metaPhoneId}/messages`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${cfg.metaToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          to: toNumber.replace(/\D/g, ''),
+          type: 'text',
+          text: { body: message }
+        })
+      });
+      const data = await r.json();
+      return data.messages ? { ok: true } : { ok: false, error: JSON.stringify(data) };
+
+    } else if (cfg.provider === 'twilio') {
+      // Twilio API
+      const auth = Buffer.from(`${cfg.twilioSid}:${cfg.twilioToken}`).toString('base64');
+      const body = new URLSearchParams({
+        From: `whatsapp:${cfg.twilioFrom}`,
+        To: `whatsapp:${toNumber.replace(/\D/g, '')}`,
+        Body: message
+      });
+      const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${cfg.twilioSid}/Messages.json`, {
+        method: 'POST',
+        headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString()
+      });
+      const data = await r.json();
+      return data.sid ? { ok: true } : { ok: false, error: data.message };
+    }
+    return { ok: false, error: 'Proveedor no reconocido' };
+  } catch(e) { console.error('[WA Error]', e.message); return { ok: false, error: e.message }; }
+}
+
+// ─── GOOGLE CALENDAR API ──────────────────────────────────
+async function crearEventoGCal(negocio_id, cita) {
+  try {
+    const { data: neg } = await supabase.from('negocios').select('gcal_config').eq('id', negocio_id).single();
+    if (!neg?.gcal_config) return { ok: false, error: 'GCal no configurado' };
+    const cfg = neg.gcal_config;
+    if (!cfg.clientId || !cfg.apiKey || !cfg.calendarId) return { ok: false, error: 'GCal incompleto' };
+
+    // Construir fecha/hora del evento
+    const [year, month, day] = cita.fecha.split('-');
+    const [hour, min] = (cita.hora || '09:00').split(':');
+    const durMin = parseInt(cita.duracion) || 30;
+    const start = new Date(year, month-1, day, hour, min);
+    const end   = new Date(start.getTime() + durMin * 60000);
+    const fmt   = d => d.toISOString();
+
+    const event = {
+      summary: `${cita.servicio} — ${cita.cliente}`,
+      description: `Barbero: ${cita.barbero}
+Cliente: ${cita.cliente}
+Tel: ${cita.cliente_tel || ''}`,
+      start: { dateTime: fmt(start), timeZone: 'America/Santo_Domingo' },
+      end:   { dateTime: fmt(end),   timeZone: 'America/Santo_Domingo' }
+    };
+
+    const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cfg.calendarId)}/events?key=${cfg.apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cfg.accessToken}` },
+      body: JSON.stringify(event)
+    });
+    const data = await r.json();
+    return data.id ? { ok: true, eventId: data.id } : { ok: false, error: JSON.stringify(data) };
+  } catch(e) { console.error('[GCal Error]', e.message); return { ok: false, error: e.message }; }
+}
+
 // ─── AUTH ─────────────────────────────────────────────────
 app.post('/auth/login', async (req, res) => {
   try {
@@ -219,7 +297,23 @@ app.post('/citas', async (req, res) => {
       sucursal: c.sucursal||'', estado: c.estado||'pendiente', precio: c.precio||'0',
       duracion: c.duracion||'30 min', notas: c.notas||''
     }).select('id').single();
-    res.status(201).json({ id: data.id, ...c });
+    const citaCreada = { ...c, id: data.id };
+    res.status(201).json(citaCreada);
+
+    // Enviar confirmación WA al cliente (async — no bloquea la respuesta)
+    if (c.negocio_id && c.cliente_tel) {
+      const { data: neg } = await supabase.from('negocios').select('wa_config,nombre').eq('id', c.negocio_id).single();
+      const cfg = neg?.wa_config;
+      if (cfg?.provider && cfg?.tConfirmacion !== false) {
+        const msg = `✅ *Cita confirmada* en ${neg.nombre}\n\n` +
+          `📅 Fecha: ${c.fecha}\n⏰ Hora: ${c.hora}\n` +
+          `💇 Servicio: ${c.servicio}\n👤 Barbero: ${c.barbero}\n` +
+          `📍 Sucursal: ${c.sucursal}\n\n_Para cancelar responde CANCELAR_`;
+        enviarMensajeWA(c.negocio_id, c.cliente_tel, msg).then(r => {
+          if (!r.ok) console.warn('[WA] No enviado:', r.error);
+        });
+      }
+    }
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
