@@ -13,6 +13,7 @@ const app  = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET      = process.env.JWT_SECRET || 'slotbook_secret_cambiame_en_produccion';
 const SUPABASE_URL    = process.env.SUPABASE_URL;
+const BACKEND_URL     = process.env.BACKEND_URL || 'https://slotbook-backend-production.up.railway.app';
 const SUPABASE_SECRET = process.env.SUPABASE_SECRET; // service_role key
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET);
@@ -86,6 +87,121 @@ app.delete('/upload', authMiddleware, async (req, res) => {
     if (error) return res.status(500).json({ error: error.message });
     res.json({ ok: true });
   } catch(e) { console.error(e); res.status(500).json({ error: e.message }); }
+});
+
+// ─── EMAIL — RESEND API ──────────────────────────────────
+async function enviarEmailResend(negocio_id, toEmail, subject, htmlBody) {
+  try {
+    const { data: neg } = await supabase.from('negocios').select('email_config,nombre').eq('id', negocio_id).single();
+    const cfg = neg?.email_config;
+    if (!cfg?.resendKey) return { ok: false, error: 'Resend no configurado' };
+
+    const { default: fetch } = await import('node-fetch');
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${cfg.resendKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: cfg.fromEmail || `${neg.nombre} <noreply@slotbook.app>`,
+        to: [toEmail],
+        subject,
+        html: htmlBody
+      })
+    });
+    const data = await r.json();
+    return data.id ? { ok: true, id: data.id } : { ok: false, error: JSON.stringify(data) };
+  } catch(e) { console.error('[Email Error]', e.message); return { ok: false, error: e.message }; }
+}
+
+function buildEmailConfirmacion(neg, cita, cancelUrl) {
+  return `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cita confirmada</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f4f4f5;margin:0;padding:20px}
+  .card{background:#fff;border-radius:16px;max-width:480px;margin:0 auto;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08)}
+  .header{background:#4F46E5;padding:28px 32px;color:#fff}
+  .header h1{margin:0;font-size:22px;font-weight:700}
+  .header p{margin:6px 0 0;opacity:.85;font-size:14px}
+  .body{padding:28px 32px}
+  .check{font-size:40px;margin-bottom:12px}
+  .title{font-size:20px;font-weight:700;color:#111;margin:0 0 6px}
+  .subtitle{font-size:14px;color:#6b7280;margin:0 0 24px}
+  .info{background:#f9fafb;border-radius:10px;padding:16px;margin-bottom:24px}
+  .row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f3f4f6}
+  .row:last-child{border:none}
+  .row .label{font-size:13px;color:#6b7280}
+  .row .value{font-size:13px;font-weight:600;color:#111}
+  .btn{display:block;text-align:center;padding:14px;border-radius:10px;font-size:15px;font-weight:600;text-decoration:none;margin-bottom:12px}
+  .btn-cancel{background:#fff;border:1.5px solid #e5e7eb;color:#374151}
+  .footer{padding:16px 32px;text-align:center;font-size:12px;color:#9ca3af;border-top:1px solid #f3f4f6}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <h1>${neg.nombre}</h1>
+    <p>${neg.direccion || ''}</p>
+  </div>
+  <div class="body">
+    <div class="check">✅</div>
+    <p class="title">¡Cita confirmada!</p>
+    <p class="subtitle">Tu reserva ha sido registrada exitosamente.</p>
+    <div class="info">
+      <div class="row"><span class="label">Servicio</span><span class="value">${cita.servicio}</span></div>
+      <div class="row"><span class="label">Barbero</span><span class="value">${cita.barbero}</span></div>
+      <div class="row"><span class="label">Fecha</span><span class="value">${cita.fecha}</span></div>
+      <div class="row"><span class="label">Hora</span><span class="value">${cita.hora}</span></div>
+      <div class="row"><span class="label">Sucursal</span><span class="value">${cita.sucursal || neg.nombre}</span></div>
+      ${neg.direccion ? `<div class="row"><span class="label">Dirección</span><span class="value">${neg.direccion}</span></div>` : ''}
+    </div>
+    <a href="${cancelUrl}" class="btn btn-cancel">✕ Cancelar mi cita</a>
+  </div>
+  <div class="footer">Si tienes dudas contáctanos al ${neg.tel || neg.whatsapp || ''}<br>Este correo fue generado automáticamente por SlotBook</div>
+</div>
+</body>
+</html>`;
+}
+
+// ─── CANCELACIÓN PÚBLICA DE CITAS ────────────────────────
+app.get('/cancelar/:id', async (req, res) => {
+  try {
+    const { data: cita } = await supabase.from('citas').select('*').eq('id', req.params.id).single();
+    if (!cita) return res.status(404).send('<h2>Cita no encontrada</h2>');
+    if (cita.estado === 'Cancelada' || cita.estado === 'cancelada') {
+      return res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Cita cancelada</title><style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f4f4f5;margin:0}.card{background:#fff;border-radius:16px;padding:40px;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.08);max-width:400px}</style></head><body><div class="card"><div style="font-size:48px">✓</div><h2 style="color:#16a34a;margin:16px 0 8px">Cita ya cancelada</h2><p style="color:#6b7280">Esta cita ya fue cancelada anteriormente.</p></div></body></html>`);
+    }
+    // Mostrar página de confirmación de cancelación
+    const { data: neg } = await supabase.from('negocios').select('nombre,color').eq('id', cita.negocio_id).single();
+    res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Cancelar cita</title><style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f4f4f5;margin:0}.card{background:#fff;border-radius:16px;padding:40px;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.08);max-width:400px}.btn{padding:14px 28px;border-radius:10px;font-size:15px;font-weight:600;border:none;cursor:pointer;width:100%;margin-top:10px}.btn-cancel{background:#ef4444;color:#fff}.btn-back{background:#f3f4f6;color:#374151}</style></head>
+<body><div class="card">
+  <div style="font-size:48px">📅</div>
+  <h2 style="margin:16px 0 4px">${neg?.nombre || 'SlotBook'}</h2>
+  <p style="color:#6b7280;margin:0 0 24px">¿Deseas cancelar tu cita?</p>
+  <div style="background:#f9fafb;border-radius:10px;padding:16px;text-align:left;margin-bottom:24px">
+    <p style="margin:4px 0;font-size:14px"><strong>Servicio:</strong> ${cita.servicio}</p>
+    <p style="margin:4px 0;font-size:14px"><strong>Fecha:</strong> ${cita.fecha} a las ${cita.hora}</p>
+    <p style="margin:4px 0;font-size:14px"><strong>Barbero:</strong> ${cita.barbero}</p>
+  </div>
+  <form method="POST" action="/cancelar/${cita.id}">
+    <button type="submit" class="btn btn-cancel">Sí, cancelar mi cita</button>
+  </form>
+  <button class="btn btn-back" onclick="history.back()">Volver</button>
+</div></body></html>`);
+  } catch(e) { res.status(500).send('<h2>Error</h2>'); }
+});
+
+app.post('/cancelar/:id', async (req, res) => {
+  try {
+    const { data: cita } = await supabase.from('citas').select('*').eq('id', req.params.id).single();
+    if (!cita) return res.status(404).send('<h2>Cita no encontrada</h2>');
+    await supabase.from('citas').update({ estado: 'Cancelada' }).eq('id', req.params.id);
+    const { data: neg } = await supabase.from('negocios').select('nombre').eq('id', cita.negocio_id).single();
+    res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Cita cancelada</title><style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f4f4f5;margin:0}.card{background:#fff;border-radius:16px;padding:40px;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.08);max-width:400px}</style></head><body><div class="card"><div style="font-size:48px">✅</div><h2 style="color:#16a34a;margin:16px 0 8px">Cita cancelada</h2><p style="color:#6b7280">Tu cita en <strong>${neg?.nombre}</strong> ha sido cancelada exitosamente.</p></div></body></html>`);
+  } catch(e) { res.status(500).send('<h2>Error al cancelar</h2>'); }
 });
 
 // ─── WHATSAPP BUSINESS API ───────────────────────────────
@@ -300,6 +416,20 @@ app.post('/citas', async (req, res) => {
     const citaCreada = { ...c, id: data.id };
     res.status(201).json(citaCreada);
 
+    // Enviar email de confirmación al cliente (async)
+    if (c.negocio_id && c.cliente_email) {
+      const BACKEND_URL = process.env.BACKEND_URL || 'https://slotbook-backend-production.up.railway.app';
+      const cancelUrl = `${BACKEND_URL}/cancelar/${data.id}`;
+      const { data: negEmail } = await supabase.from('negocios').select('nombre,direccion,tel,whatsapp,email_config').eq('id', c.negocio_id).single();
+      if (negEmail?.email_config?.resendKey) {
+        const subject = `✅ Cita confirmada en ${negEmail.nombre}`;
+        const html = buildEmailConfirmacion(negEmail, { ...c, id: data.id }, cancelUrl);
+        enviarEmailResend(c.negocio_id, c.cliente_email, subject, html).then(r => {
+          if (!r.ok) console.warn('[Email] No enviado:', r.error);
+        });
+      }
+    }
+
     // Enviar confirmación WA al cliente (async — no bloquea la respuesta)
     if (c.negocio_id && c.cliente_tel) {
       const { data: neg } = await supabase.from('negocios').select('wa_config,nombre').eq('id', c.negocio_id).single();
@@ -451,7 +581,7 @@ app.put('/mi-negocio/horario', authMiddleware, soloAdmin, async (req, res) => {
 
 app.patch('/mi-negocio', authMiddleware, soloAdmin, async (req, res) => {
   try {
-    const allowed = ['tema','wa_config','gcal_config','nombre','direccion','tel','whatsapp','rnc','horario','roles'];
+    const allowed = ['tema','wa_config','gcal_config','email_config','nombre','direccion','tel','whatsapp','rnc','horario','roles'];
     const update = {};
     allowed.forEach(k => { if (req.body[k] !== undefined) update[k] = req.body[k]; });
     if (!Object.keys(update).length) return res.status(400).json({ error: 'Sin campos' });
