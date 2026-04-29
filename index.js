@@ -72,6 +72,22 @@ app.post('/upload', authMiddleware, upload.single('image'), async (req, res) => 
   } catch(e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
+// ─── DELETE FOTO (Supabase Storage) ─────────────────────
+app.delete('/upload', authMiddleware, async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url) return res.status(400).json({ error: 'url requerida' });
+    // Extraer el path del archivo desde la URL pública
+    // URL format: https://xxx.supabase.co/storage/v1/object/public/fotos/negocio_id/archivo.jpg
+    const match = url.match(/\/fotos\/(.+)$/);
+    if (!match) return res.status(400).json({ error: 'URL inválida' });
+    const filePath = match[1];
+    const { error } = await supabase.storage.from('fotos').remove([filePath]);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ ok: true });
+  } catch(e) { console.error(e); res.status(500).json({ error: e.message }); }
+});
+
 // ─── AUTH ─────────────────────────────────────────────────
 app.post('/auth/login', async (req, res) => {
   try {
